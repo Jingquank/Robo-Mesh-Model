@@ -1,0 +1,1054 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robo Mesh Model — Mocap Dummy Generator</title>
+<style>
+  :root {
+    --bg: #17181c;
+    --panel: #101114;
+    --panel-edge: #23252b;
+    --text: #d6d8de;
+    --text-dim: #8b8e98;
+    --accent: #7aa2ff;
+    --ok: #5fd18a;
+    --fail: #ff7a7a;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+  }
+  #app { display: flex; height: 100%; }
+  #viewport { position: relative; flex: 1; min-width: 0; }
+  #viewport canvas { display: block; }
+  #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .jlabel {
+    font: 10px/1 var(--mono);
+    color: #cfe0ff;
+    background: rgba(16, 17, 20, 0.72);
+    border: 1px solid rgba(122, 162, 255, 0.35);
+    border-radius: 3px;
+    padding: 1px 4px;
+    white-space: nowrap;
+    transform: translate(8px, -50%);
+  }
+  #panel {
+    width: 304px;
+    flex: none;
+    background: var(--panel);
+    border-left: 1px solid var(--panel-edge);
+    overflow-y: auto;
+    padding: 18px 16px 28px;
+  }
+  #panel header { margin-bottom: 16px; }
+  #panel h1 { font-size: 15px; font-weight: 650; letter-spacing: 0.01em; }
+  #panel header p { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
+  #panel h2 {
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.09em; color: var(--text-dim);
+    margin: 18px 0 8px;
+  }
+  .stats { display: flex; gap: 8px; }
+  .stats > div {
+    flex: 1; background: var(--bg); border: 1px solid var(--panel-edge);
+    border-radius: 6px; padding: 8px 6px 7px; text-align: center;
+  }
+  .stats span { display: block; font: 600 15px var(--mono); color: var(--text); }
+  .stats label { display: block; margin-top: 2px; font-size: 10px; color: var(--text-dim); }
+  .row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .row label { user-select: none; cursor: pointer; }
+  input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+  button {
+    display: block; width: 100%; margin: 6px 0;
+    background: #1b1d23; color: var(--text);
+    border: 1px solid var(--panel-edge); border-radius: 6px;
+    padding: 8px 10px; font: 500 12.5px system-ui; cursor: pointer;
+    text-align: left;
+  }
+  button:hover { border-color: var(--accent); color: #fff; }
+  button.primary { background: #1e2a4a; border-color: #35507f; }
+  button small { float: right; color: var(--text-dim); font: 11px var(--mono); }
+  #badge {
+    display: inline-block; margin: 8px 0 4px;
+    font: 600 11px var(--mono); border-radius: 4px; padding: 3px 8px;
+  }
+  #badge.ok { background: rgba(95, 209, 138, 0.12); color: var(--ok); border: 1px solid rgba(95, 209, 138, 0.4); }
+  #badge.fail { background: rgba(255, 122, 122, 0.1); color: var(--fail); border: 1px solid rgba(255, 122, 122, 0.4); }
+  #badge.wait { background: rgba(139, 142, 152, 0.12); color: var(--text-dim); border: 1px solid var(--panel-edge); }
+  #report {
+    font: 10.5px/1.6 var(--mono); color: var(--text-dim);
+    background: var(--bg); border: 1px solid var(--panel-edge); border-radius: 6px;
+    padding: 8px; margin-top: 6px; white-space: pre-wrap; word-break: break-word;
+    max-height: 180px; overflow-y: auto;
+  }
+  #tree { font: 11px/1.7 var(--mono); }
+  #tree details { padding-left: 12px; }
+  #tree > details { padding-left: 0; }
+  #tree summary { cursor: pointer; color: var(--text); }
+  #tree summary::marker { color: var(--text-dim); }
+  #tree .leaf { padding-left: 24px; color: var(--text-dim); }
+  #err {
+    position: absolute; inset: auto 12px 12px 12px; z-index: 9;
+    background: #2a1518; border: 1px solid #6e2a2a; border-radius: 6px;
+    color: #ffb4b4; font: 11px var(--mono); padding: 10px; display: none;
+    white-space: pre-wrap;
+  }
+</style>
+<script>
+  // Registered before the module so load-time failures are never silent.
+  (function () {
+    function show(msg) {
+      var el = document.getElementById('err');
+      if (el) { el.style.display = 'block'; el.textContent = 'Error: ' + msg; }
+      var badge = document.getElementById('badge');
+      if (badge && /LOADING|VALIDATING/.test(badge.textContent)) {
+        badge.className = 'fail';
+        badge.textContent = 'LOAD FAILED';
+      }
+    }
+    addEventListener('error', function (e) { show(e.message || String(e.error || e)); });
+    addEventListener('unhandledrejection', function (e) {
+      show((e.reason && e.reason.message) || String(e.reason));
+    });
+  })();
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="viewport"><div id="err"></div></div>
+  <aside id="panel">
+    <header>
+      <h1>Robo Mesh Model</h1>
+      <p>Procedural mocap dummy — T-pose, Y-up, centimeters</p>
+    </header>
+
+    <section class="stats">
+      <div><span id="stat-joints">–</span><label>joints</label></div>
+      <div><span id="stat-tris">–</span><label>triangles</label></div>
+      <div><span id="stat-height">–</span><label>height cm</label></div>
+    </section>
+
+    <h2>Display</h2>
+    <div class="row"><input type="checkbox" id="cb-wire"><label for="cb-wire">Wireframe</label></div>
+    <div class="row"><input type="checkbox" id="cb-skel" checked><label for="cb-skel">Skeleton (bones + joints)</label></div>
+    <div class="row"><input type="checkbox" id="cb-labels"><label for="cb-labels">Joint name labels</label></div>
+
+    <h2>Export</h2>
+    <div class="row"><input type="checkbox" id="cb-prefix"><label for="cb-prefix">mixamorig: name prefix</label></div>
+    <button id="btn-ascii" class="primary">Download FBX <small>ASCII 7.4</small></button>
+    <button id="btn-bin">Download FBX <small>binary 7.4</small></button>
+    <button id="btn-glb">Download GLB <small>meters</small></button>
+    <div><span id="badge" class="wait">LOADING…</span></div>
+    <div id="report">waiting for module…</div>
+    <button id="btn-validate">Re-run validation</button>
+
+    <h2>Hierarchy</h2>
+    <div id="tree"></div>
+  </aside>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ============================================================
+ * 1. RIG — 26 joints, Mixamo naming, world positions in cm.
+ *    Rest rotations are identity everywhere: a bone's local
+ *    transform is the pure translation childWorld - parentWorld.
+ *    T-pose: arms along ±X, legs down -Y, character faces +Z.
+ * ============================================================ */
+const JOINTS = (() => {
+  const j = [];
+  const add = (name, parent, x, y, z) => j.push({ name, parent, pos: [x, y, z] });
+  add('Hips', null, 0, 98, 0);
+  add('Spine', 'Hips', 0, 107, 0);
+  add('Spine1', 'Spine', 0, 117, 0);
+  add('Spine2', 'Spine1', 0, 127, 0);
+  add('Neck', 'Spine2', 0, 141, 0);
+  add('Head', 'Neck', 0, 149, 0);
+  for (const [S, sx] of [['Left', 1], ['Right', -1]]) {
+    add(S + 'Shoulder', 'Spine2', sx * 4, 137, 0);
+    add(S + 'Arm', S + 'Shoulder', sx * 13, 137, 0);
+    add(S + 'ForeArm', S + 'Arm', sx * 37, 137, 0);
+    add(S + 'Hand', S + 'ForeArm', sx * 59, 137, 0);
+    add(S + 'HandThumb1', S + 'Hand', sx * 62.5, 135.5, 4);
+    add(S + 'HandIndex1', S + 'Hand', sx * 67, 137, 0);
+  }
+  for (const [S, sx] of [['Left', 1], ['Right', -1]]) {
+    add(S + 'UpLeg', 'Hips', sx * 9, 94, 0);
+    add(S + 'Leg', S + 'UpLeg', sx * 9, 53, 0);
+    add(S + 'Foot', S + 'Leg', sx * 9, 12, 0);
+    add(S + 'ToeBase', S + 'Foot', sx * 9, 3.5, 10);
+  }
+  return j;
+})();
+const JINDEX = new Map(JOINTS.map((j, i) => [j.name, i]));
+const MESH_NAME = 'MocapDummy';
+
+/* ============================================================
+ * 2. BODY PARTS — each rigidly skinned to one bone.
+ *    Capsule seg presets keep the whole body under 3,000 tris.
+ *    scl is applied in world axes before placement; axis picks
+ *    the capsule's long direction.
+ * ============================================================ */
+const PARTS = (() => {
+  const p = [];
+  const cap = (bone, o) => p.push({ kind: 'capsule', bone, seg: 'std', axis: 'y', ...o });
+  const box = (bone, o) => p.push({ kind: 'rbox', bone, seg: 3, ...o });
+  cap('Hips', { r: 10, l: 7, axis: 'x', at: [0, 97.5, 0], scl: [1, 0.92, 0.82] });
+  cap('Spine', { r: 8.5, l: 4, at: [0, 107.5, 0], scl: [1.2, 1, 0.78] });
+  cap('Spine1', { r: 9, l: 4, at: [0, 117, 0], scl: [1.25, 1, 0.76] });
+  cap('Spine2', { r: 10.5, l: 8, at: [0, 129.5, 0], scl: [1.3, 1, 0.74] });
+  cap('Neck', { r: 4, l: 6, seg: 'lo', at: [0, 143.5, 0] });
+  cap('Head', { r: 10.5, l: 4.5, seg: 'hi', at: [0, 159.5, 0], scl: [0.94, 1, 0.94] });
+  for (const [S, sx] of [['Left', 1], ['Right', -1]]) {
+    cap(S + 'Shoulder', { r: 4.6, l: 5, seg: 'lo', axis: 'x', at: [sx * 8.5, 137, 0] });
+    cap(S + 'Arm', { r: 4.8, l: 15, axis: 'x', at: [sx * 25, 137, 0] });
+    cap(S + 'ForeArm', { r: 4.1, l: 14, axis: 'x', at: [sx * 48, 137, 0] });
+    cap(S + 'Hand', { r: 5, l: 5, axis: 'x', at: [sx * 63, 137, 0], scl: [1, 0.85, 0.62] });
+    cap(S + 'HandThumb1', { r: 2.6, l: 3, seg: 'lo', axis: 'z', at: [sx * 62.5, 135.8, 4.6] });
+    cap(S + 'HandIndex1', { r: 4, l: 3, seg: 'lo', axis: 'x', at: [sx * 68, 137, 0], scl: [1, 0.78, 0.55] });
+    cap(S + 'UpLeg', { r: 6.6, l: 28, at: [sx * 9, 73.5, 0] });
+    cap(S + 'Leg', { r: 5.2, l: 30, at: [sx * 9, 32.5, 0] });
+    box(S + 'Foot', { w: 9.5, h: 7.5, d: 18, rad: 2.4, at: [sx * 9, 4.4, 3.5] });
+    cap(S + 'ToeBase', { r: 3.6, l: 3.5, seg: 'lo', axis: 'z', at: [sx * 9, 3.4, 13], scl: [1.15, 0.78, 1] });
+  }
+  return p;
+})();
+const CAP_SEGS = { lo: [2, 6], std: [3, 7], hi: [4, 10] }; // [capSegments, radialSegments]
+
+/* ============================================================
+ * 3. CHARACTER BUILD
+ * ============================================================ */
+function buildSkeleton(scale, prefix) {
+  const bones = [];
+  const byName = new Map();
+  for (const j of JOINTS) {
+    const b = new THREE.Bone();
+    b.name = prefix + j.name;
+    const pp = j.parent ? JOINTS[JINDEX.get(j.parent)].pos : [0, 0, 0];
+    b.position.set((j.pos[0] - pp[0]) * scale, (j.pos[1] - pp[1]) * scale, (j.pos[2] - pp[2]) * scale);
+    if (j.parent) byName.get(j.parent).add(b);
+    bones.push(b);
+    byName.set(j.name, b);
+  }
+  return { bones, root: bones[0] };
+}
+
+function partGeometry(part, scale) {
+  let g;
+  if (part.kind === 'capsule') {
+    const [cs, rs] = CAP_SEGS[part.seg];
+    g = new THREE.CapsuleGeometry(part.r, part.l, cs, rs);
+    // Odd radial counts are asymmetric across the sagittal plane; align a
+    // lathe vertex to it so vertical parts stay left/right symmetric.
+    if (rs % 2 === 1 && part.axis === 'y') g.rotateY(Math.PI / 2);
+    if (part.axis === 'x') g.rotateZ(Math.PI / 2);
+    else if (part.axis === 'z') g.rotateX(Math.PI / 2);
+  } else {
+    // RoundedBoxGeometry is non-indexed; weld it so every part is indexed
+    // and mergeGeometries can combine them into one control-point pool.
+    g = BufferGeometryUtils.mergeVertices(new RoundedBoxGeometry(part.w, part.h, part.d, part.seg, part.rad));
+  }
+  if (part.scl) g.scale(part.scl[0], part.scl[1], part.scl[2]);
+  g.translate(part.at[0], part.at[1], part.at[2]);
+  if (scale !== 1) g.scale(scale, scale, scale);
+  return g;
+}
+
+// Capsules are lathe-based: each pole ring emits zero-area triangles.
+// Strip them so the exports carry no degenerate polygons.
+function stripDegenerateTriangles(g) {
+  const pos = g.attributes.position;
+  const idx = g.index.array;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), cr = new THREE.Vector3();
+  const keep = [];
+  for (let i = 0; i < idx.length; i += 3) {
+    a.fromBufferAttribute(pos, idx[i]);
+    b.fromBufferAttribute(pos, idx[i + 1]);
+    c.fromBufferAttribute(pos, idx[i + 2]);
+    ab.subVectors(b, a); ac.subVectors(c, a); cr.crossVectors(ab, ac);
+    if (cr.lengthSq() > 1e-14) keep.push(idx[i], idx[i + 1], idx[i + 2]);
+  }
+  g.setIndex(keep);
+  return compactVertices(g);
+}
+
+// Drop vertices no triangle references (pole duplicates whose only faces were
+// degenerate) so DCCs see no loose vertices or weights on unused points.
+function compactVertices(g) {
+  const idx = g.index.array;
+  const count = g.attributes.position.count;
+  const remap = new Int32Array(count).fill(-1);
+  let n = 0;
+  for (let i = 0; i < idx.length; i++) if (remap[idx[i]] < 0) remap[idx[i]] = 0;
+  for (let i = 0; i < count; i++) if (remap[i] === 0) remap[i] = n++;
+  if (n === count) return g;
+  for (const name of Object.keys(g.attributes)) {
+    const a = g.attributes[name];
+    const arr = new a.array.constructor(n * a.itemSize);
+    for (let i = 0; i < count; i++) {
+      if (remap[i] < 0) continue;
+      for (let k = 0; k < a.itemSize; k++) arr[remap[i] * a.itemSize + k] = a.array[i * a.itemSize + k];
+    }
+    g.setAttribute(name, new THREE.BufferAttribute(arr, a.itemSize, a.normalized));
+  }
+  g.setIndex(Array.from(idx, i => remap[i]));
+  return g;
+}
+
+function buildBody(scale) {
+  const parts = [];
+  for (const part of PARTS) {
+    const g = partGeometry(part, scale);
+    const boneIndex = JINDEX.get(part.bone);
+    const n = g.attributes.position.count;
+    const si = new Uint16Array(n * 4);
+    const sw = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) { si[i * 4] = boneIndex; sw[i * 4] = 1; }
+    g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+    g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+    parts.push(g);
+  }
+  const merged = BufferGeometryUtils.mergeGeometries(parts, false);
+  stripDegenerateTriangles(merged);
+  merged.computeBoundingBox();
+  return merged;
+}
+
+function buildCharacter(scale = 1, prefix = '') {
+  const { bones, root } = buildSkeleton(scale, prefix);
+  const geo = buildBody(scale);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x9a9ba0, roughness: 0.55, metalness: 0.05 });
+  const mesh = new THREE.SkinnedMesh(geo, mat);
+  mesh.name = MESH_NAME;
+  const group = new THREE.Group();
+  group.name = 'RoboMeshModel';
+  group.add(root);
+  group.add(mesh);
+  group.updateMatrixWorld(true);
+  mesh.bind(new THREE.Skeleton(bones), new THREE.Matrix4());
+  mesh.frustumCulled = false;
+  return { group, mesh, bones, root };
+}
+
+/* ============================================================
+ * 4. FBX EXPORT DATA — pulled once from a fresh cm-scale build,
+ *    independent of viewer state.
+ * ============================================================ */
+function extractFbxData(prefix) {
+  const g = buildBody(1);
+  const pos = g.attributes.position, nrm = g.attributes.normal, uv = g.attributes.uv;
+  const sIdx = g.attributes.skinIndex;
+  const index = g.index.array;
+  const nV = pos.count, nT = index.length / 3;
+
+  const verts = new Float64Array(nV * 3);
+  verts.set(pos.array.subarray(0, nV * 3));
+  const polyIdx = new Int32Array(index.length);
+  for (let t = 0; t < nT; t++) {
+    polyIdx[t * 3] = index[t * 3];
+    polyIdx[t * 3 + 1] = index[t * 3 + 1];
+    polyIdx[t * 3 + 2] = -index[t * 3 + 2] - 1; // last index of each polygon is XOR'd
+  }
+  const normals = new Float64Array(nT * 9);
+  for (let c = 0; c < index.length; c++) {
+    const v = index[c];
+    normals[c * 3] = nrm.getX(v);
+    normals[c * 3 + 1] = nrm.getY(v);
+    normals[c * 3 + 2] = nrm.getZ(v);
+  }
+  const uvs = new Float64Array(nV * 2);
+  uvs.set(uv.array.subarray(0, nV * 2));
+  const uvIndex = Int32Array.from(index);
+  const smoothing = new Int32Array(nT).fill(1);
+
+  const clusters = JOINTS.map(() => ({ indexes: [], weights: [] }));
+  for (let v = 0; v < nV; v++) {
+    clusters[sIdx.getX(v)].indexes.push(v);
+    clusters[sIdx.getX(v)].weights.push(1);
+  }
+  const bones = JOINTS.map(j => {
+    const pp = j.parent ? JOINTS[JINDEX.get(j.parent)].pos : [0, 0, 0];
+    return {
+      name: prefix + j.name,
+      parent: j.parent ? JINDEX.get(j.parent) : -1,
+      local: [j.pos[0] - pp[0], j.pos[1] - pp[1], j.pos[2] - pp[2]],
+      world: j.pos.slice(),
+    };
+  });
+  return { verts, polyIdx, normals, uvs, uvIndex, smoothing, clusters, bones, nV, nT };
+}
+
+function lintFbxData(d) {
+  const errs = [];
+  if (d.normals.length !== d.nT * 9) errs.push(`normals length ${d.normals.length} != 9*tris ${d.nT * 9}`);
+  if (d.smoothing.length !== d.nT) errs.push('smoothing length != tri count');
+  if (d.uvIndex.length !== d.nT * 3) errs.push('uvIndex length != corner count');
+  for (let t = 0; t < d.nT; t++) {
+    if (d.polyIdx[t * 3 + 2] >= 0) { errs.push(`tri ${t}: last index not negative`); break; }
+  }
+  let weighted = 0;
+  for (const cl of d.clusters) {
+    weighted += cl.indexes.length;
+    if (cl.indexes.length !== cl.weights.length) errs.push('cluster indexes/weights length mismatch');
+    for (const w of cl.weights) if (w !== 1) { errs.push('non-rigid weight found'); break; }
+    for (const i of cl.indexes) if (i < 0 || i >= d.nV) { errs.push('cluster index out of range'); break; }
+  }
+  if (weighted !== d.nV) errs.push(`weighted vertices ${weighted} != vertex count ${d.nV} (each vertex must be in exactly one cluster)`);
+  d.bones.forEach((b, i) => { if (b.parent >= i) errs.push(`bone ${b.name}: parent after child`); });
+  for (const arr of [d.verts, d.normals]) {
+    for (let i = 0; i < arr.length; i++) if (!Number.isFinite(arr[i])) { errs.push('non-finite value in geometry'); break; }
+  }
+  if (d.nT >= 3000) errs.push(`triangle budget exceeded: ${d.nT}`);
+  return errs;
+}
+
+/* ============================================================
+ * 5. FBX DOCUMENT TREE — typed nodes shared by both serializers.
+ *    Scalars: I int32, L int64, D double, S string, C bool.
+ *    Arrays: d float64[], i int32[]. R raw bytes (binary only).
+ * ============================================================ */
+const I = v => ({ t: 'I', v });
+const L = v => ({ t: 'L', v });
+const D = v => ({ t: 'D', v });
+const S = v => ({ t: 'S', v });
+const C = v => ({ t: 'C', v });
+const DA = a => ({ t: 'd', v: a instanceof Float64Array ? a : Float64Array.from(a) });
+const IA = a => ({ t: 'i', v: a instanceof Int32Array ? a : Int32Array.from(a) });
+const RAW = a => ({ t: 'R', v: a });
+function N(name, props = [], children = [], only = null) { return { name, props, children, only }; }
+const P = (n, t1, t2, fl, ...vals) => N('P', [S(n), S(t1), S(t2), S(fl), ...vals]);
+const P70 = (...ps) => N('Properties70', [], ps);
+const IDENTITY16 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+const translation16 = (x, y, z) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
+const CREATOR = 'Robo-Mesh-Model procedural mocap dummy generator';
+
+function modelNode(id, name, cls, t) {
+  return N('Model', [L(id), S('Model::' + name), S(cls)], [
+    N('Version', [I(232)]),
+    P70(
+      P('InheritType', 'enum', '', '', I(1)),
+      P('DefaultAttributeIndex', 'int', 'Integer', '', I(0)),
+      P('Lcl Translation', 'Lcl Translation', '', 'A', D(t[0]), D(t[1]), D(t[2])),
+      P('Lcl Rotation', 'Lcl Rotation', '', 'A', D(0), D(0), D(0)),
+      P('Lcl Scaling', 'Lcl Scaling', '', 'A', D(1), D(1), D(1)),
+    ),
+    N('Shading', [C(true)]),
+    N('Culling', [S('CullingOff')]),
+  ]);
+}
+
+function buildFbxDoc(d) {
+  let idc = 100000;
+  const nid = () => idc++;
+  const geoId = nid(), meshModelId = nid(), matId = nid(), skinId = nid(), poseId = nid(), sceneId = nid();
+  const boneModelIds = d.bones.map(nid);
+  const attrIds = d.bones.map(nid);
+  const clusterIds = d.bones.map(nid);
+
+  const now = new Date();
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  const ctime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+    `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}:${pad(now.getMilliseconds(), 3)}`;
+
+  const geometry = N('Geometry', [L(geoId), S('Geometry::' + MESH_NAME), S('Mesh')], [
+    N('Vertices', [DA(d.verts)]),
+    N('PolygonVertexIndex', [IA(d.polyIdx)]),
+    N('GeometryVersion', [I(124)]),
+    N('LayerElementNormal', [I(0)], [
+      N('Version', [I(101)]),
+      N('Name', [S('')]),
+      N('MappingInformationType', [S('ByPolygonVertex')]),
+      N('ReferenceInformationType', [S('Direct')]),
+      N('Normals', [DA(d.normals)]),
+    ]),
+    N('LayerElementUV', [I(0)], [
+      N('Version', [I(101)]),
+      N('Name', [S('UVMap')]),
+      N('MappingInformationType', [S('ByPolygonVertex')]),
+      N('ReferenceInformationType', [S('IndexToDirect')]),
+      N('UV', [DA(d.uvs)]),
+      N('UVIndex', [IA(d.uvIndex)]),
+    ]),
+    N('LayerElementSmoothing', [I(0)], [
+      N('Version', [I(102)]),
+      N('Name', [S('')]),
+      N('MappingInformationType', [S('ByPolygon')]),
+      N('ReferenceInformationType', [S('Direct')]),
+      N('Smoothing', [IA(d.smoothing)]),
+    ]),
+    N('LayerElementMaterial', [I(0)], [
+      N('Version', [I(101)]),
+      N('Name', [S('')]),
+      N('MappingInformationType', [S('AllSame')]),
+      N('ReferenceInformationType', [S('IndexToDirect')]),
+      N('Materials', [IA([0])]),
+    ]),
+    N('Layer', [I(0)], [
+      N('Version', [I(100)]),
+      N('LayerElement', [], [N('Type', [S('LayerElementNormal')]), N('TypedIndex', [I(0)])]),
+      N('LayerElement', [], [N('Type', [S('LayerElementUV')]), N('TypedIndex', [I(0)])]),
+      N('LayerElement', [], [N('Type', [S('LayerElementSmoothing')]), N('TypedIndex', [I(0)])]),
+      N('LayerElement', [], [N('Type', [S('LayerElementMaterial')]), N('TypedIndex', [I(0)])]),
+    ]),
+  ]);
+
+  const models = [modelNode(meshModelId, MESH_NAME, 'Mesh', [0, 0, 0])];
+  d.bones.forEach((b, i) => models.push(modelNode(boneModelIds[i], b.name, 'LimbNode', b.local)));
+
+  const nodeAttrs = d.bones.map((b, i) =>
+    N('NodeAttribute', [L(attrIds[i]), S('NodeAttribute::' + b.name), S('LimbNode')], [
+      N('TypeFlags', [S('Skeleton')]),
+    ]));
+
+  const material = N('Material', [L(matId), S('Material::MocapGray'), S('')], [
+    N('Version', [I(102)]),
+    N('ShadingModel', [S('phong')]),
+    N('MultiLayer', [I(0)]),
+    P70(
+      P('ShadingModel', 'KString', '', '', S('Phong')),
+      P('DiffuseColor', 'Color', '', 'A', D(0.604), D(0.608), D(0.62)),
+      P('AmbientColor', 'Color', '', 'A', D(0), D(0), D(0)),
+      P('SpecularColor', 'Color', '', 'A', D(0.06), D(0.06), D(0.06)),
+      P('Shininess', 'double', 'Number', 'A', D(10)),
+      P('Opacity', 'double', 'Number', 'A', D(1)),
+    ),
+  ]);
+
+  const skin = N('Deformer', [L(skinId), S('Deformer::Skin_' + MESH_NAME), S('Skin')], [
+    N('Version', [I(101)]),
+    N('Link_DeformAcuracy', [D(50)]), // Autodesk's canonical misspelling — do not "fix"
+  ]);
+  const clusters = d.bones.map((b, i) =>
+    N('Deformer', [L(clusterIds[i]), S('SubDeformer::Cluster_' + b.name), S('Cluster')], [
+      N('Version', [I(100)]),
+      N('UserData', [S(''), S('')]),
+      N('Indexes', [IA(d.clusters[i].indexes)]),
+      N('Weights', [DA(d.clusters[i].weights)]),
+      // On disk, Transform is stored in BONE space: boneWorld^-1 * meshWorldAtBind
+      // (the SDK API only *presents* it as the mesh's global). Mesh world is
+      // identity and binds are pure translations, so this is -boneWorld.
+      N('Transform', [DA(translation16(-b.world[0], -b.world[1], -b.world[2]))]),
+      N('TransformLink', [DA(translation16(b.world[0], b.world[1], b.world[2]))]),
+    ]));
+
+  const pose = N('Pose', [L(poseId), S('Pose::BindPose'), S('BindPose')], [
+    N('Type', [S('BindPose')]),
+    N('Version', [I(100)]),
+    N('NbPoseNodes', [I(1 + d.bones.length)]),
+    N('PoseNode', [], [N('Node', [L(meshModelId)]), N('Matrix', [DA(IDENTITY16)])]),
+    ...d.bones.map((b, i) =>
+      N('PoseNode', [], [N('Node', [L(boneModelIds[i])]), N('Matrix', [DA(translation16(b.world[0], b.world[1], b.world[2]))])])),
+  ]);
+
+  const conns = [];
+  const CC = (child, parent) => conns.push(N('C', [S('OO'), L(child), L(parent)]));
+  CC(meshModelId, 0);
+  d.bones.forEach((b, i) => CC(boneModelIds[i], b.parent < 0 ? 0 : boneModelIds[b.parent]));
+  CC(geoId, meshModelId);
+  CC(matId, meshModelId);
+  CC(skinId, geoId);
+  d.bones.forEach((b, i) => {
+    CC(clusterIds[i], skinId);
+    CC(boneModelIds[i], clusterIds[i]); // bone model is the CHILD of its cluster
+    CC(attrIds[i], boneModelIds[i]);
+  });
+
+  const counts = {
+    GlobalSettings: 1,
+    Model: models.length,
+    Geometry: 1,
+    Material: 1,
+    Deformer: 1 + clusters.length,
+    NodeAttribute: nodeAttrs.length,
+    Pose: 1,
+  };
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+
+  return [
+    N('FBXHeaderExtension', [], [
+      N('FBXHeaderVersion', [I(1003)]),
+      N('FBXVersion', [I(7400)]),
+      N('EncryptionType', [I(0)]),
+      N('CreationTimeStamp', [], [
+        N('Version', [I(1000)]),
+        N('Year', [I(now.getFullYear())]),
+        N('Month', [I(now.getMonth() + 1)]),
+        N('Day', [I(now.getDate())]),
+        N('Hour', [I(now.getHours())]),
+        N('Minute', [I(now.getMinutes())]),
+        N('Second', [I(now.getSeconds())]),
+        N('Millisecond', [I(now.getMilliseconds())]),
+      ]),
+      N('Creator', [S(CREATOR)]),
+    ]),
+    N('FileId', [RAW(Uint8Array.from([0x28, 0xb3, 0x2a, 0xeb, 0xb6, 0x24, 0xcc, 0xc2, 0xbf, 0xc8, 0xb0, 0x2a, 0xa9, 0x2b, 0xfc, 0xf1]))], [], 'binary'),
+    N('CreationTime', [S(ctime)], [], 'binary'),
+    N('Creator', [S(CREATOR)], [], 'binary'),
+    N('GlobalSettings', [], [
+      N('Version', [I(1000)]),
+      P70(
+        P('UpAxis', 'int', 'Integer', '', I(1)),
+        P('UpAxisSign', 'int', 'Integer', '', I(1)),
+        P('FrontAxis', 'int', 'Integer', '', I(2)),
+        P('FrontAxisSign', 'int', 'Integer', '', I(1)),
+        P('CoordAxis', 'int', 'Integer', '', I(0)),
+        P('CoordAxisSign', 'int', 'Integer', '', I(1)),
+        P('OriginalUpAxis', 'int', 'Integer', '', I(1)),
+        P('OriginalUpAxisSign', 'int', 'Integer', '', I(1)),
+        P('UnitScaleFactor', 'double', 'Number', '', D(1)),
+        P('OriginalUnitScaleFactor', 'double', 'Number', '', D(1)),
+        P('AmbientColor', 'ColorRGB', 'Color', '', D(0), D(0), D(0)),
+        P('DefaultCamera', 'KString', '', '', S('Producer Perspective')),
+        P('TimeMode', 'enum', '', '', I(6)),
+        P('TimeSpanStart', 'KTime', 'Time', '', L(0)),
+        P('TimeSpanStop', 'KTime', 'Time', '', L(46186158000)),
+        P('CustomFrameRate', 'double', 'Number', '', D(-1)),
+      ),
+    ]),
+    N('Documents', [], [
+      N('Count', [I(1)]),
+      N('Document', [L(sceneId), S(''), S('Scene')], [
+        P70(
+          P('SourceObject', 'object', '', ''),
+          P('ActiveAnimStackName', 'KString', '', '', S('')),
+        ),
+        N('RootNode', [L(0)]),
+      ]),
+    ]),
+    N('References', [], []),
+    N('Definitions', [], [
+      N('Version', [I(100)]),
+      N('Count', [I(total)]),
+      ...Object.entries(counts).map(([k, v]) => N('ObjectType', [S(k)], [N('Count', [I(v)])])),
+    ]),
+    N('Objects', [], [geometry, ...models, ...nodeAttrs, material, skin, ...clusters, pose]),
+    N('Connections', [], conns),
+    N('Takes', [], [N('Current', [S('')])]),
+  ];
+}
+
+/* ============================================================
+ * 6. ASCII SERIALIZER (FBX 7.4)
+ * ============================================================ */
+function fbxNum(v) {
+  if (typeof v === 'bigint') return v.toString();
+  if (Number.isInteger(v)) return String(v);
+  let s = v.toFixed(6).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  return s === '-0' ? '0' : s;
+}
+function asciiProp(p) {
+  switch (p.t) {
+    case 'I': case 'L': return String(p.v);
+    case 'D': return fbxNum(p.v);
+    case 'S': return '"' + p.v + '"';
+    case 'C': return p.v ? 'T' : 'W';
+  }
+}
+function serializeFbxAscii(roots) {
+  const out = [
+    '; FBX 7.4.0 project file',
+    '; Generated by ' + CREATOR,
+    '; ----------------------------------------------------',
+    '',
+  ];
+  const emit = (node, depth) => {
+    if (node.only === 'binary') return;
+    const ind = '\t'.repeat(depth);
+    if (node.props.length === 1 && (node.props[0].t === 'd' || node.props[0].t === 'i')) {
+      const a = node.props[0].v;
+      out.push(`${ind}${node.name}: *${a.length} {`);
+      const lines = [];
+      let buf = '';
+      for (let i = 0; i < a.length; i++) {
+        const tok = (buf ? ',' : '') + fbxNum(a[i]);
+        if (buf.length + tok.length > 1800) { lines.push(buf + ','); buf = fbxNum(a[i]); }
+        else buf += tok;
+      }
+      lines.push(buf);
+      out.push(ind + '\ta: ' + lines[0]);
+      for (let k = 1; k < lines.length; k++) out.push(lines[k]);
+      out.push(ind + '}');
+      return;
+    }
+    const ps = node.props.map(asciiProp).join(', ');
+    if (node.children.length > 0 || node.props.length === 0) {
+      out.push(`${ind}${node.name}:${ps ? ' ' + ps : ' '} {`);
+      for (const c of node.children) emit(c, depth + 1);
+      out.push(ind + '}');
+    } else {
+      out.push(`${ind}${node.name}: ${ps}`);
+    }
+  };
+  for (const r of roots) {
+    emit(r, 0);
+    out.push('');
+  }
+  return out.join('\n');
+}
+
+/* ============================================================
+ * 7. BINARY SERIALIZER (FBX 7.4, uncompressed arrays)
+ * ============================================================ */
+class BinWriter {
+  constructor() { this.buf = new ArrayBuffer(1 << 20); this.dv = new DataView(this.buf); this.len = 0; }
+  ensure(n) {
+    while (this.len + n > this.buf.byteLength) {
+      const nb = new ArrayBuffer(this.buf.byteLength * 2);
+      new Uint8Array(nb).set(new Uint8Array(this.buf, 0, this.len));
+      this.buf = nb; this.dv = new DataView(nb);
+    }
+  }
+  u8(v) { this.ensure(1); this.dv.setUint8(this.len, v); this.len += 1; }
+  u32(v) { this.ensure(4); this.dv.setUint32(this.len, v, true); this.len += 4; }
+  i32(v) { this.ensure(4); this.dv.setInt32(this.len, v, true); this.len += 4; }
+  i64(v) { this.ensure(8); this.dv.setBigInt64(this.len, BigInt(v), true); this.len += 8; }
+  f64(v) { this.ensure(8); this.dv.setFloat64(this.len, v, true); this.len += 8; }
+  zeros(n) { this.ensure(n); this.len += n; } // buffer starts zeroed
+  bytes(arr) { this.ensure(arr.length); new Uint8Array(this.buf).set(arr, this.len); this.len += arr.length; }
+  str(s) { this.bytes(new TextEncoder().encode(s)); }
+  patchU32(at, v) { this.dv.setUint32(at, v, true); }
+  toUint8() { return new Uint8Array(this.buf.slice(0, this.len)); }
+}
+// ASCII "Class::Name" becomes "Name\x00\x01Class" in binary files.
+function binNameClass(s) {
+  const i = s.indexOf('::');
+  return i < 0 ? s : s.slice(i + 2) + '\x00\x01' + s.slice(0, i);
+}
+function writeBinProp(w, p) {
+  switch (p.t) {
+    case 'C': w.str('C'); w.u8(p.v ? 1 : 0); break;
+    case 'I': w.str('I'); w.i32(p.v); break;
+    case 'L': w.str('L'); w.i64(p.v); break;
+    case 'D': w.str('D'); w.f64(p.v); break;
+    case 'S': {
+      w.str('S');
+      const b = new TextEncoder().encode(binNameClass(p.v));
+      w.u32(b.length); w.bytes(b);
+      break;
+    }
+    case 'R': w.str('R'); w.u32(p.v.length); w.bytes(p.v); break;
+    case 'd': {
+      w.str('d'); w.u32(p.v.length); w.u32(0); w.u32(p.v.length * 8);
+      for (let i = 0; i < p.v.length; i++) w.f64(p.v[i]);
+      break;
+    }
+    case 'i': {
+      w.str('i'); w.u32(p.v.length); w.u32(0); w.u32(p.v.length * 4);
+      for (let i = 0; i < p.v.length; i++) w.i32(p.v[i]);
+      break;
+    }
+  }
+}
+function writeBinNode(w, node) {
+  if (node.only === 'ascii') return;
+  const start = w.len;
+  w.u32(0); w.u32(0); w.u32(0);
+  const nameB = new TextEncoder().encode(node.name);
+  w.u8(nameB.length); w.bytes(nameB);
+  const propsStart = w.len;
+  for (const p of node.props) writeBinProp(w, p);
+  const propListLen = w.len - propsStart;
+  const kids = node.children.filter(c => c.only !== 'ascii');
+  if (kids.length > 0 || node.props.length === 0) {
+    for (const c of kids) writeBinNode(w, c);
+    w.zeros(13); // null-record sentinel (13 bytes for version < 7500)
+  }
+  w.patchU32(start, w.len);
+  w.patchU32(start + 4, node.props.length);
+  w.patchU32(start + 8, propListLen);
+}
+function serializeFbxBinary(roots) {
+  const w = new BinWriter();
+  w.str('Kaydara FBX Binary  '); w.u8(0); w.u8(0x1a); w.u8(0);
+  w.u32(7400);
+  for (const r of roots) writeBinNode(w, r);
+  w.zeros(13);
+  // Footer recipe as written by the official SDK (and Blender's exporter).
+  w.bytes(Uint8Array.from([0xfa, 0xbc, 0xab, 0x09, 0xd0, 0xc8, 0xd4, 0x66, 0xb1, 0x76, 0xfb, 0x83, 0x1c, 0xf7, 0x26, 0x7e]));
+  w.zeros(4);
+  let pad = ((w.len + 15) & ~15) - w.len;
+  if (pad === 0) pad = 16;
+  w.zeros(pad);
+  w.u32(7400);
+  w.zeros(120);
+  w.bytes(Uint8Array.from([0xf8, 0x5a, 0x8c, 0x6a, 0xde, 0xf5, 0xd9, 0x7e, 0xec, 0xe9, 0x0c, 0xe3, 0x75, 0x8f, 0x29, 0x0b]));
+  return w.toUint8();
+}
+
+/* ============================================================
+ * 8. EXPORT ENTRY POINTS
+ * ============================================================ */
+function currentPrefix() { return ui.prefix.checked ? 'mixamorig:' : ''; }
+
+function generateFbx(kind) {
+  const data = extractFbxData(currentPrefix());
+  const errs = lintFbxData(data);
+  if (errs.length) throw new Error('FBX lint failed:\n' + errs.join('\n'));
+  const roots = buildFbxDoc(data);
+  return kind === 'ascii' ? serializeFbxAscii(roots) : serializeFbxBinary(roots);
+}
+
+function generateGlb() {
+  const { group } = buildCharacter(0.01, currentPrefix()); // glTF is meters
+  const exporter = new GLTFExporter();
+  return new Promise((resolve, reject) => exporter.parse(group, resolve, reject, { binary: true }));
+}
+
+function download(filename, blob) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+/* ============================================================
+ * 9. VALIDATION — re-import our own output with three.js
+ *    loaders. Necessary, not sufficient: FBXLoader ignores
+ *    Documents/Definitions/GlobalSettings, so DCC-level checks
+ *    live in verify/blender_check.py.
+ * ============================================================ */
+function inspectImported(root) {
+  const boneNames = [];
+  let smesh = null;
+  root.traverse(o => {
+    if (o.isBone) boneNames.push(o.name);
+    if (o.isSkinnedMesh) smesh = o;
+  });
+  let height = NaN;
+  if (smesh) {
+    // Raw attribute bounds — SkinnedMesh bounding paths need a rendered
+    // skeleton update, which these throwaway re-imports never get.
+    smesh.geometry.computeBoundingBox();
+    const bb = smesh.geometry.boundingBox;
+    height = bb.max.y - bb.min.y;
+  }
+  return {
+    boneNames,
+    skinned: !!smesh,
+    skeletonSize: smesh ? smesh.skeleton.bones.length : 0,
+    vertices: smesh ? smesh.geometry.attributes.position.count : 0,
+    height,
+  };
+}
+
+let validationRun = 0;
+async function runValidation() {
+  const runId = ++validationRun; // last-started run owns the UI
+  const badge = document.getElementById('badge');
+  const report = document.getElementById('report');
+  badge.className = 'wait';
+  badge.textContent = 'VALIDATING…';
+  const lines = [];
+  let ok = true;
+  const check = (cond, msg) => { lines.push((cond ? 'ok   ' : 'FAIL ') + msg); if (!cond) ok = false; };
+  const prefix = currentPrefix();
+  const expected = new Set(JOINTS.map(j => prefix + j.name));
+  try {
+    const data = extractFbxData(prefix);
+    const lintErrs = lintFbxData(data);
+    check(lintErrs.length === 0, 'lint: ' + (lintErrs.length ? lintErrs.join('; ') : 'geometry, weights, hierarchy'));
+
+    const ascii = generateFbx('ascii');
+    const bin = generateFbx('binary');
+    const loader = new FBXLoader();
+    const asciiBuf = new TextEncoder().encode(ascii).buffer;
+    let rA = null, rB = null;
+    try { rA = inspectImported(loader.parse(asciiBuf, '')); } catch (e) { check(false, 'FBX ASCII re-import threw: ' + e.message); }
+    try { rB = inspectImported(loader.parse(bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength), '')); } catch (e) { check(false, 'FBX binary re-import threw: ' + e.message); }
+    for (const [tag, r] of [['ascii', rA], ['binary', rB]]) {
+      if (!r) continue;
+      check(r.skinned, `${tag}: SkinnedMesh present`);
+      check(r.boneNames.length === JOINTS.length, `${tag}: ${r.boneNames.length}/${JOINTS.length} bones`);
+      check(r.skeletonSize === JOINTS.length, `${tag}: skeleton binds ${r.skeletonSize} bones`);
+      check(r.boneNames.every(n => expected.has(n)), `${tag}: Mixamo name set`);
+      check(r.vertices === data.nT * 3, `${tag}: ${r.vertices} polygon vertices (expect ${data.nT * 3})`);
+      check(Math.abs(r.height - 172) < 6, `${tag}: height ${r.height.toFixed(1)} cm`);
+    }
+    if (rA && rB) {
+      check(rA.boneNames.join() === rB.boneNames.join() && rA.vertices === rB.vertices,
+        'ascii/binary round-trips agree');
+    }
+    const glbBuf = await generateGlb();
+    const gltf = await new Promise((res, rej) => new GLTFLoader().parse(glbBuf, '', res, rej));
+    const rG = inspectImported(gltf.scene);
+    check(rG.skinned && rG.boneNames.length === JOINTS.length, `glb: skinned, ${rG.boneNames.length} bones`);
+    check(Math.abs(rG.height - 1.72) < 0.06, `glb: height ${rG.height.toFixed(2)} m`);
+  } catch (e) {
+    check(false, 'exception: ' + e.message);
+    console.error(e);
+  }
+  if (runId !== validationRun) return;
+  badge.className = ok ? 'ok' : 'fail';
+  badge.textContent = ok ? 'ROUND-TRIP PASS' : 'ROUND-TRIP FAIL';
+  report.textContent = lines.join('\n');
+}
+
+/* ============================================================
+ * 10. VIEWER
+ * ============================================================ */
+const ui = {
+  wire: document.getElementById('cb-wire'),
+  skel: document.getElementById('cb-skel'),
+  labels: document.getElementById('cb-labels'),
+  prefix: document.getElementById('cb-prefix'),
+};
+
+const wrap = document.getElementById('viewport');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+wrap.appendChild(renderer.domElement);
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.domElement.id = 'labels';
+wrap.appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x17181c);
+const camera = new THREE.PerspectiveCamera(38, 1, 1, 5000);
+camera.position.set(210, 165, 300);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 88, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+scene.add(new THREE.HemisphereLight(0xdfe4ee, 0x36383d, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(160, 260, 180); scene.add(key);
+const fill = new THREE.DirectionalLight(0xbfd0e8, 0.7); fill.position.set(-220, 120, -60); scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffffff, 1.1); rim.position.set(-60, 200, -240); scene.add(rim);
+
+const grid = new THREE.GridHelper(400, 40, 0x3a3d45, 0x26282e);
+scene.add(grid);
+scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.5, 30), 26, 0x4d5f8f, 8, 4));
+
+const character = buildCharacter(1, '');
+scene.add(character.group);
+
+const skelHelper = new THREE.SkeletonHelper(character.root);
+scene.add(skelHelper);
+const dotGeo = new THREE.BufferGeometry();
+dotGeo.setAttribute('position', new THREE.Float32BufferAttribute(JOINTS.flatMap(j => j.pos), 3));
+const dots = new THREE.Points(dotGeo, new THREE.PointsMaterial({
+  color: 0x9fd0ff, size: 2.6, sizeAttenuation: true, depthTest: false,
+}));
+dots.renderOrder = 999;
+scene.add(dots);
+
+for (const bone of character.bones) {
+  const div = document.createElement('div');
+  div.className = 'jlabel';
+  div.textContent = bone.name;
+  bone.add(new CSS2DObject(div));
+}
+
+const syncWire = () => { character.mesh.material.wireframe = ui.wire.checked; };
+const syncSkel = () => { skelHelper.visible = dots.visible = ui.skel.checked; };
+const syncLabels = () => { labelRenderer.domElement.style.visibility = ui.labels.checked ? 'visible' : 'hidden'; };
+ui.wire.addEventListener('change', syncWire);
+ui.skel.addEventListener('change', syncSkel);
+ui.labels.addEventListener('change', syncLabels);
+// Sync once at startup — browsers may restore checkbox state across reloads.
+syncWire(); syncSkel(); syncLabels();
+
+function exportButton(id, fn) {
+  const btn = document.getElementById(id);
+  btn.addEventListener('click', async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try { await fn(); } finally { btn.disabled = false; }
+  });
+}
+exportButton('btn-ascii', () => {
+  download('robo-mocap-dummy-ascii.fbx', new Blob([generateFbx('ascii')], { type: 'text/plain' }));
+});
+exportButton('btn-bin', () => {
+  download('robo-mocap-dummy-binary.fbx', new Blob([generateFbx('binary')], { type: 'application/octet-stream' }));
+});
+exportButton('btn-glb', async () => {
+  download('robo-mocap-dummy.glb', new Blob([await generateGlb()], { type: 'model/gltf-binary' }));
+});
+document.getElementById('btn-validate').addEventListener('click', runValidation);
+ui.prefix.addEventListener('change', runValidation);
+
+/* readouts */
+{
+  const g = character.mesh.geometry;
+  const tris = g.index.count / 3;
+  document.getElementById('stat-joints').textContent = JOINTS.length;
+  document.getElementById('stat-tris').textContent = tris.toLocaleString();
+  const bbox = g.boundingBox;
+  document.getElementById('stat-height').textContent = (bbox.max.y - bbox.min.y).toFixed(0);
+  console.info(`[robo-mesh-model] ${JOINTS.length} joints, ${tris} triangles, ` +
+    `${g.attributes.position.count} vertices, height ${(bbox.max.y - bbox.min.y).toFixed(1)} cm`);
+  if (tris >= 3000) console.warn('[robo-mesh-model] triangle budget exceeded');
+}
+
+/* hierarchy tree */
+{
+  const kids = new Map(JOINTS.map(j => [j.name, []]));
+  for (const j of JOINTS) if (j.parent) kids.get(j.parent).push(j.name);
+  const build = name => {
+    const c = kids.get(name);
+    if (!c.length) {
+      const div = document.createElement('div');
+      div.className = 'leaf';
+      div.textContent = name;
+      return div;
+    }
+    const det = document.createElement('details');
+    det.open = true;
+    const sum = document.createElement('summary');
+    sum.textContent = name;
+    det.appendChild(sum);
+    for (const n of c) det.appendChild(build(n));
+    return det;
+  };
+  document.getElementById('tree').appendChild(build('Hips'));
+}
+
+/* resize + loop */
+function resize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h);
+  labelRenderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(wrap);
+resize();
+renderer.setAnimationLoop(() => {
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+});
+
+/* exposed for debugging + headless automation */
+window.__robo = { THREE, character, buildCharacter, extractFbxData, generateFbx, generateGlb, runValidation, JOINTS, PARTS };
+
+runValidation();
+</script>
+</body>
+</html>
