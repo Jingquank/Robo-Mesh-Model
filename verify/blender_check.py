@@ -2,21 +2,24 @@
 
 Usage:
     blender -b --factory-startup --python verify/blender_check.py -- \
-        <binary.fbx> <model.glb> [name-prefix]
+        <binary.fbx> <model.glb> [name-prefix] [expected-tris]
 
-Verifies, for both files: armature with the 26 Mixamo-named joints and the
-expected parent map, a mesh where every vertex sits in exactly one vertex
-group at weight 1.0, triangle count, and real-world height ~1.72 m.
+Verifies, for both files: armature with the 52 Mixamo-named joints (full
+finger chains) and the expected parent map, a mesh where every vertex sits in
+exactly one vertex group at weight 1.0, triangle count, three material slots
+all in use, mesh anchored to the armature, and real-world height ~1.46 m.
 ASCII FBX is intentionally not tested here — Blender < 4.5 cannot read it;
 that flavor is covered by the in-page FBXLoader round-trip.
 """
 import sys
 
 import bpy
+from mathutils import Vector
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 FBX_PATH, GLB_PATH = argv[0], argv[1]
 PREFIX = argv[2] if len(argv) > 2 else ''
+EXPECTED_TRIS = int(argv[3]) if len(argv) > 3 else 6396
 
 PARENTS = {
     'Hips': None, 'Spine': 'Hips', 'Spine1': 'Spine', 'Spine2': 'Spine1',
@@ -27,15 +30,17 @@ for S in ('Left', 'Right'):
     PARENTS[S + 'Arm'] = S + 'Shoulder'
     PARENTS[S + 'ForeArm'] = S + 'Arm'
     PARENTS[S + 'Hand'] = S + 'ForeArm'
-    PARENTS[S + 'HandThumb1'] = S + 'Hand'
-    PARENTS[S + 'HandIndex1'] = S + 'Hand'
+    for f in ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky'):
+        PARENTS[S + 'Hand' + f + '1'] = S + 'Hand'
+        PARENTS[S + 'Hand' + f + '2'] = S + 'Hand' + f + '1'
+        PARENTS[S + 'Hand' + f + '3'] = S + 'Hand' + f + '2'
     PARENTS[S + 'UpLeg'] = 'Hips'
     PARENTS[S + 'Leg'] = S + 'UpLeg'
     PARENTS[S + 'Foot'] = S + 'Leg'
     PARENTS[S + 'ToeBase'] = S + 'Foot'
 PARENTS = {PREFIX + k: (PREFIX + v if v else None) for k, v in PARENTS.items()}
 
-EXPECTED_TRIS = 2944
+EXPECTED_MATERIALS = 3
 
 failures = []
 passes = []
@@ -60,7 +65,7 @@ def verify(tag):
     arm, mesh = arms[0], meshes[0]
 
     names = {b.name for b in arm.data.bones}
-    check(names == set(PARENTS), f'{tag}: bone name set '
+    check(names == set(PARENTS), f'{tag}: bone name set, {len(names)} bones '
           f'(missing {set(PARENTS) - names or "none"}, extra {names - set(PARENTS) or "none"})')
     for b in arm.data.bones:
         want = PARENTS.get(b.name)
@@ -71,10 +76,7 @@ def verify(tag):
     else:
         check(True, f'{tag}: parent map matches')
 
-    deg = 0
-    for b in arm.data.bones:
-        if (b.head_local - b.tail_local).length < 1e-6:
-            deg += 1
+    deg = sum(1 for b in arm.data.bones if (b.head_local - b.tail_local).length < 1e-6)
     check(deg == 0, f'{tag}: no zero-length bones ({deg})')
 
     def wx(bone):
@@ -87,12 +89,20 @@ def verify(tag):
     la, ra = wx(bl[PREFIX + 'LeftArm']), wx(bl[PREFIX + 'RightArm'])
     lh, rh = wx(bl[PREFIX + 'LeftHand']), wx(bl[PREFIX + 'RightHand'])
     check(abs(la.z - lh.z) < 1e-4 and abs(ra.z - rh.z) < 1e-4, f'{tag}: arms level (T-pose)')
-    check(abs(wx(bl[PREFIX + 'Hips']).z - 0.98) < 0.02, f'{tag}: Hips at ~0.98 m')
+    check(abs(wx(bl[PREFIX + 'Hips']).z - 0.84) < 0.02, f'{tag}: Hips at ~0.84 m')
+    tip = wx(bl[PREFIX + 'LeftHandMiddle3'])
+    check(tip.x > wx(bl[PREFIX + 'LeftHand']).x, f'{tag}: finger chains extend along +X')
 
     tris = sum(1 for p in mesh.data.polygons if len(p.vertices) == 3)
     ngons = len(mesh.data.polygons) - tris
     check(tris == EXPECTED_TRIS and ngons == 0,
           f'{tag}: {tris} triangles, {ngons} non-tris (want {EXPECTED_TRIS}, 0)')
+
+    check(len(mesh.material_slots) == EXPECTED_MATERIALS,
+          f'{tag}: {len(mesh.material_slots)} material slots (want {EXPECTED_MATERIALS})')
+    used_slots = {p.material_index for p in mesh.data.polygons}
+    check(used_slots == set(range(EXPECTED_MATERIALS)),
+          f'{tag}: all material slots referenced by polygons ({sorted(used_slots)})')
 
     vg_names = {g.name for g in mesh.vertex_groups}
     check(vg_names == set(PARENTS), f'{tag}: vertex-group names == bone names')
@@ -105,10 +115,9 @@ def verify(tag):
 
     depsgraph = bpy.context.evaluated_depsgraph_get()
     ev = mesh.evaluated_get(depsgraph)
-    from mathutils import Vector
     ws = [ev.matrix_world @ Vector(c) for c in ev.bound_box]
     height = max(v.z for v in ws) - min(v.z for v in ws)
-    check(abs(height - 1.716) < 0.05, f'{tag}: height {height:.3f} m (want ~1.716)')
+    check(1.38 < height < 1.54, f'{tag}: height {height:.3f} m (want ~1.46)')
 
     # Bbox spans are translation-invariant, so also anchor the mesh to the
     # skeleton: a wrong cluster Transform displaces the mesh object itself.

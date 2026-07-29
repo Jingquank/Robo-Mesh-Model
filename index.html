@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Robo Mesh Model — Mocap Dummy Generator</title>
+<title>Robo Mesh Model — Humanoid Platform</title>
 <style>
   :root {
-    --bg: #17181c;
-    --panel: #101114;
-    --panel-edge: #23252b;
-    --text: #d6d8de;
-    --text-dim: #8b8e98;
-    --accent: #7aa2ff;
-    --ok: #5fd18a;
-    --fail: #ff7a7a;
+    --bg: #f2f3f5;
+    --panel: #fafbfc;
+    --panel-edge: #e3e5e9;
+    --text: #26282c;
+    --text-dim: #7b7f88;
+    --accent: #2b6cff;
+    --ok: #1d8a4e;
+    --fail: #c33535;
     --mono: ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -30,9 +30,9 @@
   #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
   .jlabel {
     font: 10px/1 var(--mono);
-    color: #cfe0ff;
-    background: rgba(16, 17, 20, 0.72);
-    border: 1px solid rgba(122, 162, 255, 0.35);
+    color: #1c3f8f;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(43, 108, 255, 0.35);
     border-radius: 3px;
     padding: 1px 4px;
     white-space: nowrap;
@@ -56,34 +56,36 @@
   }
   .stats { display: flex; gap: 8px; }
   .stats > div {
-    flex: 1; background: var(--bg); border: 1px solid var(--panel-edge);
+    flex: 1; background: #fff; border: 1px solid var(--panel-edge);
     border-radius: 6px; padding: 8px 6px 7px; text-align: center;
   }
   .stats span { display: block; font: 600 15px var(--mono); color: var(--text); }
   .stats label { display: block; margin-top: 2px; font-size: 10px; color: var(--text-dim); }
   .row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
   .row label { user-select: none; cursor: pointer; }
+  .row small { color: var(--text-dim); }
   input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
   button {
     display: block; width: 100%; margin: 6px 0;
-    background: #1b1d23; color: var(--text);
+    background: #fff; color: var(--text);
     border: 1px solid var(--panel-edge); border-radius: 6px;
     padding: 8px 10px; font: 500 12.5px system-ui; cursor: pointer;
     text-align: left;
   }
-  button:hover { border-color: var(--accent); color: #fff; }
-  button.primary { background: #1e2a4a; border-color: #35507f; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.55; cursor: default; }
+  button.primary { background: #eef3ff; border-color: #b9ccf5; }
   button small { float: right; color: var(--text-dim); font: 11px var(--mono); }
   #badge {
     display: inline-block; margin: 8px 0 4px;
     font: 600 11px var(--mono); border-radius: 4px; padding: 3px 8px;
   }
-  #badge.ok { background: rgba(95, 209, 138, 0.12); color: var(--ok); border: 1px solid rgba(95, 209, 138, 0.4); }
-  #badge.fail { background: rgba(255, 122, 122, 0.1); color: var(--fail); border: 1px solid rgba(255, 122, 122, 0.4); }
-  #badge.wait { background: rgba(139, 142, 152, 0.12); color: var(--text-dim); border: 1px solid var(--panel-edge); }
+  #badge.ok { background: rgba(29, 138, 78, 0.1); color: var(--ok); border: 1px solid rgba(29, 138, 78, 0.35); }
+  #badge.fail { background: rgba(195, 53, 53, 0.08); color: #c33535; border: 1px solid rgba(195, 53, 53, 0.35); }
+  #badge.wait { background: rgba(123, 127, 136, 0.1); color: var(--text-dim); border: 1px solid var(--panel-edge); }
   #report {
     font: 10.5px/1.6 var(--mono); color: var(--text-dim);
-    background: var(--bg); border: 1px solid var(--panel-edge); border-radius: 6px;
+    background: #fff; border: 1px solid var(--panel-edge); border-radius: 6px;
     padding: 8px; margin-top: 6px; white-space: pre-wrap; word-break: break-word;
     max-height: 180px; overflow-y: auto;
   }
@@ -95,8 +97,8 @@
   #tree .leaf { padding-left: 24px; color: var(--text-dim); }
   #err {
     position: absolute; inset: auto 12px 12px 12px; z-index: 9;
-    background: #2a1518; border: 1px solid #6e2a2a; border-radius: 6px;
-    color: #ffb4b4; font: 11px var(--mono); padding: 10px; display: none;
+    background: #fdeeee; border: 1px solid #e2a5a5; border-radius: 6px;
+    color: #a52a2a; font: 11px var(--mono); padding: 10px; display: none;
     white-space: pre-wrap;
   }
 </style>
@@ -125,7 +127,7 @@
   <aside id="panel">
     <header>
       <h1>Robo Mesh Model</h1>
-      <p>Procedural mocap dummy — T-pose, Y-up, centimeters</p>
+      <p>Compact humanoid platform — T-pose bind, Y-up, centimeters</p>
     </header>
 
     <section class="stats">
@@ -135,8 +137,9 @@
     </section>
 
     <h2>Display</h2>
+    <div class="row"><input type="checkbox" id="cb-stance" checked><label for="cb-stance">Athletic stance <small>(viewer only)</small></label></div>
     <div class="row"><input type="checkbox" id="cb-wire"><label for="cb-wire">Wireframe</label></div>
-    <div class="row"><input type="checkbox" id="cb-skel" checked><label for="cb-skel">Skeleton (bones + joints)</label></div>
+    <div class="row"><input type="checkbox" id="cb-skel"><label for="cb-skel">Skeleton (bones + joints)</label></div>
     <div class="row"><input type="checkbox" id="cb-labels"><label for="cb-labels">Joint name labels</label></div>
 
     <h2>Export</h2>
@@ -166,6 +169,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -173,73 +177,136 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 /* ============================================================
- * 1. RIG — 26 joints, Mixamo naming, world positions in cm.
- *    Rest rotations are identity everywhere: a bone's local
- *    transform is the pure translation childWorld - parentWorld.
- *    T-pose: arms along ±X, legs down -Y, character faces +Z.
+ * 1. RIG — full Mixamo humanoid, 52 joints (15 finger joints
+ *    per hand), world positions in cm. Rest rotations are
+ *    identity everywhere: a bone's local transform is the pure
+ *    translation childWorld - parentWorld. Bind pose is a
+ *    strict T-pose: arms along ±X, legs down -Y, facing +Z.
+ *    The athletic stance in the viewer is pose-only and never
+ *    reaches an export.
  * ============================================================ */
 const JOINTS = (() => {
   const j = [];
   const add = (name, parent, x, y, z) => j.push({ name, parent, pos: [x, y, z] });
-  add('Hips', null, 0, 98, 0);
-  add('Spine', 'Hips', 0, 107, 0);
-  add('Spine1', 'Spine', 0, 117, 0);
-  add('Spine2', 'Spine1', 0, 127, 0);
-  add('Neck', 'Spine2', 0, 141, 0);
-  add('Head', 'Neck', 0, 149, 0);
-  for (const [S, sx] of [['Left', 1], ['Right', -1]]) {
-    add(S + 'Shoulder', 'Spine2', sx * 4, 137, 0);
-    add(S + 'Arm', S + 'Shoulder', sx * 13, 137, 0);
-    add(S + 'ForeArm', S + 'Arm', sx * 37, 137, 0);
-    add(S + 'Hand', S + 'ForeArm', sx * 59, 137, 0);
-    add(S + 'HandThumb1', S + 'Hand', sx * 62.5, 135.5, 4);
-    add(S + 'HandIndex1', S + 'Hand', sx * 67, 137, 0);
+  add('Hips', null, 0, 84, 0);
+  add('Spine', 'Hips', 0, 92, 0);
+  add('Spine1', 'Spine', 0, 99.5, 0);
+  add('Spine2', 'Spine1', 0, 107, 0);
+  add('Neck', 'Spine2', 0, 122, 0);
+  add('Head', 'Neck', 0, 128, 0);
+  for (const [S, s] of [['Left', 1], ['Right', -1]]) {
+    add(S + 'Shoulder', 'Spine2', s * 3.5, 118.5, 0);
+    add(S + 'Arm', S + 'Shoulder', s * 11.5, 118.5, 0);
+    add(S + 'ForeArm', S + 'Arm', s * 31.5, 118.5, 0);
+    add(S + 'Hand', S + 'ForeArm', s * 49.5, 118.5, 0);
+    add(S + 'HandThumb1', S + 'Hand', s * 51.8, 117.6, 2.8);
+    add(S + 'HandThumb2', S + 'HandThumb1', s * 53.6, 117.0, 4.4);
+    add(S + 'HandThumb3', S + 'HandThumb2', s * 55.0, 116.6, 5.6);
+    add(S + 'HandIndex1', S + 'Hand', s * 56.5, 118.5, 2.1);
+    add(S + 'HandIndex2', S + 'HandIndex1', s * 59.3, 118.5, 2.1);
+    add(S + 'HandIndex3', S + 'HandIndex2', s * 61.4, 118.5, 2.1);
+    add(S + 'HandMiddle1', S + 'Hand', s * 56.8, 118.5, 0.4);
+    add(S + 'HandMiddle2', S + 'HandMiddle1', s * 59.8, 118.5, 0.4);
+    add(S + 'HandMiddle3', S + 'HandMiddle2', s * 62.0, 118.5, 0.4);
+    add(S + 'HandRing1', S + 'Hand', s * 56.5, 118.5, -1.3);
+    add(S + 'HandRing2', S + 'HandRing1', s * 59.2, 118.5, -1.3);
+    add(S + 'HandRing3', S + 'HandRing2', s * 61.2, 118.5, -1.3);
+    add(S + 'HandPinky1', S + 'Hand', s * 55.9, 118.5, -2.9);
+    add(S + 'HandPinky2', S + 'HandPinky1', s * 58.2, 118.5, -2.9);
+    add(S + 'HandPinky3', S + 'HandPinky2', s * 59.9, 118.5, -2.9);
   }
-  for (const [S, sx] of [['Left', 1], ['Right', -1]]) {
-    add(S + 'UpLeg', 'Hips', sx * 9, 94, 0);
-    add(S + 'Leg', S + 'UpLeg', sx * 9, 53, 0);
-    add(S + 'Foot', S + 'Leg', sx * 9, 12, 0);
-    add(S + 'ToeBase', S + 'Foot', sx * 9, 3.5, 10);
+  for (const [S, s] of [['Left', 1], ['Right', -1]]) {
+    add(S + 'UpLeg', 'Hips', s * 7.5, 80, 0);
+    add(S + 'Leg', S + 'UpLeg', s * 7.5, 46, 0);
+    add(S + 'Foot', S + 'Leg', s * 7.5, 10, 0);
+    add(S + 'ToeBase', S + 'Foot', s * 7.5, 2.5, 8.5);
   }
   return j;
 })();
 const JINDEX = new Map(JOINTS.map((j, i) => [j.name, i]));
-const MESH_NAME = 'MocapDummy';
+const MESH_NAME = 'RoboMesh';
 
 /* ============================================================
- * 2. BODY PARTS — each rigidly skinned to one bone.
- *    Capsule seg presets keep the whole body under 3,000 tris.
- *    scl is applied in world axes before placement; axis picks
- *    the capsule's long direction.
+ * 2. MATERIALS — three slots, exported per-polygon.
+ *    0 panel: white composite shell
+ *    1 joint: dark anodized alloy (actuators, struts, pads)
+ *    2 sensor: near-black visor glass
+ * ============================================================ */
+const MATERIALS = [
+  { key: 'PanelComposite', color: [0.878, 0.886, 0.894], metalness: 0.15, roughness: 0.45, shininess: 14 },
+  { key: 'JointAlloy', color: [0.208, 0.224, 0.243], metalness: 0.85, roughness: 0.34, shininess: 45 },
+  { key: 'SensorGlass', color: [0.047, 0.055, 0.07], metalness: 0.4, roughness: 0.12, shininess: 90 },
+];
+
+/* ============================================================
+ * 3. BODY PARTS — each rigidly skinned to one bone.
+ *    kind: capsule | cyl (actuator disc) | rbox | link
+ *    (capsule spanning two explicit points, used for fingers
+ *    and struts). Parts are sorted by material so triangles
+ *    form three contiguous runs.
  * ============================================================ */
 const PARTS = (() => {
   const p = [];
-  const cap = (bone, o) => p.push({ kind: 'capsule', bone, seg: 'std', axis: 'y', ...o });
-  const box = (bone, o) => p.push({ kind: 'rbox', bone, seg: 3, ...o });
-  cap('Hips', { r: 10, l: 7, axis: 'x', at: [0, 97.5, 0], scl: [1, 0.92, 0.82] });
-  cap('Spine', { r: 8.5, l: 4, at: [0, 107.5, 0], scl: [1.2, 1, 0.78] });
-  cap('Spine1', { r: 9, l: 4, at: [0, 117, 0], scl: [1.25, 1, 0.76] });
-  cap('Spine2', { r: 10.5, l: 8, at: [0, 129.5, 0], scl: [1.3, 1, 0.74] });
-  cap('Neck', { r: 4, l: 6, seg: 'lo', at: [0, 143.5, 0] });
-  cap('Head', { r: 10.5, l: 4.5, seg: 'hi', at: [0, 159.5, 0], scl: [0.94, 1, 0.94] });
-  for (const [S, sx] of [['Left', 1], ['Right', -1]]) {
-    cap(S + 'Shoulder', { r: 4.6, l: 5, seg: 'lo', axis: 'x', at: [sx * 8.5, 137, 0] });
-    cap(S + 'Arm', { r: 4.8, l: 15, axis: 'x', at: [sx * 25, 137, 0] });
-    cap(S + 'ForeArm', { r: 4.1, l: 14, axis: 'x', at: [sx * 48, 137, 0] });
-    cap(S + 'Hand', { r: 5, l: 5, axis: 'x', at: [sx * 63, 137, 0], scl: [1, 0.85, 0.62] });
-    cap(S + 'HandThumb1', { r: 2.6, l: 3, seg: 'lo', axis: 'z', at: [sx * 62.5, 135.8, 4.6] });
-    cap(S + 'HandIndex1', { r: 4, l: 3, seg: 'lo', axis: 'x', at: [sx * 68, 137, 0], scl: [1, 0.78, 0.55] });
-    cap(S + 'UpLeg', { r: 6.6, l: 28, at: [sx * 9, 73.5, 0] });
-    cap(S + 'Leg', { r: 5.2, l: 30, at: [sx * 9, 32.5, 0] });
-    box(S + 'Foot', { w: 9.5, h: 7.5, d: 18, rad: 2.4, at: [sx * 9, 4.4, 3.5] });
-    cap(S + 'ToeBase', { r: 3.6, l: 3.5, seg: 'lo', axis: 'z', at: [sx * 9, 3.4, 13], scl: [1.15, 0.78, 1] });
+  const J = name => JOINTS[JINDEX.get(name)].pos;
+  const cap = (bone, o) => p.push({ kind: 'capsule', bone, seg: 'std', axis: 'y', mat: 0, ...o });
+  const cyl = (bone, o) => p.push({ kind: 'cyl', bone, axis: 'x', mat: 1, ...o });
+  const box = (bone, o) => p.push({ kind: 'rbox', bone, seg: 2, mat: 0, ...o });
+  const link = (bone, from, to, r, o) => p.push({ kind: 'link', bone, from, to, r, seg: 'xs', mat: 0, ...o });
+
+  // core
+  box('Hips', { w: 17, h: 10, d: 11, rad: 3, at: [0, 83.5, 0] });
+  cyl('Spine', { r: 4.6, h: 5, axis: 'y', at: [0, 91.5, 0] });                    // waist actuator
+  box('Spine1', { w: 14.5, h: 8, d: 9.5, rad: 2.5, at: [0, 99.5, 0] });
+  box('Spine2', { w: 21, h: 16, d: 12, rad: 4.2, at: [0, 112, 0] });              // chest shell
+  box('Spine2', { w: 13, h: 12, d: 4.5, rad: 1.6, at: [0, 112.5, -7.5], mat: 1 }); // battery pack
+  cyl('Neck', { r: 2.3, h: 4.5, axis: 'y', at: [0, 124, 0] });
+  cap('Head', { r: 8, l: 4, seg: 'hi', at: [0, 136.5, 0], scl: [0.95, 1, 1.02] });
+  box('Head', { w: 12.5, h: 5.2, d: 3.4, rad: 1.6, at: [0, 137, 7], mat: 2 });    // sensor visor
+  cyl('Head', { r: 2.2, h: 1.8, at: [8, 137, 0] });                               // side sensor pods
+  cyl('Head', { r: 2.2, h: 1.8, at: [-8, 137, 0] });
+
+  for (const [S, s] of [['Left', 1], ['Right', -1]]) {
+    // arm chain
+    cyl(S + 'Shoulder', { r: 3.7, h: 4.6, at: [s * 8, 118.5, 0] });
+    cap(S + 'Arm', { r: 3.4, l: 12, axis: 'x', at: [s * 21.3, 118.5, 0], scl: [1, 1, 0.88] });
+    cyl(S + 'ForeArm', { r: 3.1, h: 4.2, axis: 'z', at: [s * 31.5, 118.5, 0] });  // elbow actuator
+    cap(S + 'ForeArm', { r: 2.9, l: 11, axis: 'x', at: [s * 40.7, 118.5, 0], scl: [1, 1, 0.85] });
+    cyl(S + 'Hand', { r: 2.4, h: 2.6, at: [s * 50.3, 118.5, 0] });                // wrist actuator
+    box(S + 'Hand', { w: 5.8, h: 2.8, d: 7.2, rad: 1, at: [s * 53.8, 118.4, 0] }); // palm
+    // dexterous fingers: one link capsule per phalanx
+    const radii = { Thumb: 1.05, Index: 0.95, Middle: 0.95, Ring: 0.9, Pinky: 0.82 };
+    for (const f of Object.keys(radii)) {
+      for (let i = 1; i <= 3; i++) {
+        const a = J(S + 'Hand' + f + i);
+        let b;
+        if (i < 3) b = J(S + 'Hand' + f + (i + 1));
+        else {
+          const prev = J(S + 'Hand' + f + (i - 1));
+          const d = [a[0] - prev[0], a[1] - prev[1], a[2] - prev[2]];
+          const len = Math.hypot(...d) || 1;
+          const tip = f === 'Thumb' ? 1.5 : 1.7;
+          b = [a[0] + d[0] / len * tip, a[1] + d[1] / len * tip, a[2] + d[2] / len * tip];
+        }
+        link(S + 'Hand' + f + i, a, b, radii[f]);
+      }
+    }
+    // leg chain
+    cyl(S + 'UpLeg', { r: 4.1, h: 5.2, at: [s * 7.5, 80, 0] });                   // hip actuator
+    cap(S + 'UpLeg', { r: 4.4, l: 21, at: [s * 7.5, 63.5, 0.4], scl: [1, 1, 0.92] });
+    cyl(S + 'Leg', { r: 3.9, h: 4.8, at: [s * 7.5, 46, 0] });                     // knee actuator
+    cap(S + 'Leg', { r: 3.5, l: 23, at: [s * 7.5, 28.5, 0.6], scl: [1, 1, 0.9] });
+    link(S + 'Leg', [s * 7.5, 43, -3.4], [s * 7.5, 13.5, -2.2], 1.1, { mat: 1 }); // shin strut
+    cyl(S + 'Foot', { r: 2.7, h: 3.6, at: [s * 7.5, 10, 0] });                    // ankle actuator
+    box(S + 'Foot', { w: 8, h: 3, d: 15.5, rad: 1.2, at: [s * 7.5, 3, 2.8] });    // foot plate
+    box(S + 'Foot', { w: 7, h: 1.6, d: 5.5, rad: 0.7, at: [s * 7.5, 1.4, -3.2], mat: 1 }); // heel pad
+    box(S + 'ToeBase', { w: 7, h: 2.4, d: 6, rad: 1, at: [s * 7.5, 2.2, 10], mat: 1 });    // toe pad
   }
-  return p;
+  return p.sort((a, b) => a.mat - b.mat); // contiguous material runs after merge
 })();
-const CAP_SEGS = { lo: [2, 6], std: [3, 7], hi: [4, 10] }; // [capSegments, radialSegments]
+const CAP_SEGS = { xs: [1, 6], lo: [2, 6], std: [3, 7], hi: [4, 10] }; // [capSegments, radialSegments]
 
 /* ============================================================
- * 3. CHARACTER BUILD
+ * 4. CHARACTER BUILD
  * ============================================================ */
 function buildSkeleton(scale, prefix) {
   const bones = [];
@@ -266,6 +333,24 @@ function partGeometry(part, scale) {
     if (rs % 2 === 1 && part.axis === 'y') g.rotateY(Math.PI / 2);
     if (part.axis === 'x') g.rotateZ(Math.PI / 2);
     else if (part.axis === 'z') g.rotateX(Math.PI / 2);
+  } else if (part.kind === 'cyl') {
+    g = new THREE.CylinderGeometry(part.r, part.r, part.h, 14);
+    if (part.axis === 'x') g.rotateZ(Math.PI / 2);
+    else if (part.axis === 'z') g.rotateX(Math.PI / 2);
+  } else if (part.kind === 'link') {
+    const from = new THREE.Vector3(...part.from), to = new THREE.Vector3(...part.to);
+    const dir = to.clone().sub(from);
+    const len = dir.length();
+    const [cs, rs] = CAP_SEGS[part.seg];
+    g = new THREE.CapsuleGeometry(part.r, Math.max(0.15, len - part.r), cs, rs);
+    // scl is link-local (y = along the link) and must precede placement,
+    // matching the local-then-place order of every other part kind.
+    if (part.scl) g.scale(part.scl[0], part.scl[1], part.scl[2]);
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    const mid = from.clone().add(to).multiplyScalar(0.5);
+    g.applyMatrix4(new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)));
+    if (scale !== 1) g.scale(scale, scale, scale);
+    return g;
   } else {
     // RoundedBoxGeometry is non-indexed; weld it so every part is indexed
     // and mergeGeometries can combine them into one control-point pool.
@@ -278,22 +363,27 @@ function partGeometry(part, scale) {
 }
 
 // Capsules are lathe-based: each pole ring emits zero-area triangles.
-// Strip them so the exports carry no degenerate polygons.
-function stripDegenerateTriangles(g) {
+// Strip them (and their orphaned vertices) so exports carry no degenerate
+// polygons; the per-triangle material array is filtered in the same pass.
+function stripDegenerateTriangles(g, triMat) {
   const pos = g.attributes.position;
   const idx = g.index.array;
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   const ab = new THREE.Vector3(), ac = new THREE.Vector3(), cr = new THREE.Vector3();
-  const keep = [];
+  const keep = [], keptMat = [];
   for (let i = 0; i < idx.length; i += 3) {
     a.fromBufferAttribute(pos, idx[i]);
     b.fromBufferAttribute(pos, idx[i + 1]);
     c.fromBufferAttribute(pos, idx[i + 2]);
     ab.subVectors(b, a); ac.subVectors(c, a); cr.crossVectors(ab, ac);
-    if (cr.lengthSq() > 1e-14) keep.push(idx[i], idx[i + 1], idx[i + 2]);
+    if (cr.lengthSq() > 1e-14) {
+      keep.push(idx[i], idx[i + 1], idx[i + 2]);
+      keptMat.push(triMat[i / 3]);
+    }
   }
   g.setIndex(keep);
-  return compactVertices(g);
+  compactVertices(g);
+  return Int32Array.from(keptMat);
 }
 
 // Drop vertices no triangle references (pole duplicates whose only faces were
@@ -321,6 +411,7 @@ function compactVertices(g) {
 
 function buildBody(scale) {
   const parts = [];
+  const partMats = [];
   for (const part of PARTS) {
     const g = partGeometry(part, scale);
     const boneIndex = JINDEX.get(part.bone);
@@ -331,19 +422,40 @@ function buildBody(scale) {
     g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
     g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
     parts.push(g);
+    partMats.push({ mat: part.mat, tris: g.index.count / 3 });
   }
   const merged = BufferGeometryUtils.mergeGeometries(parts, false);
-  stripDegenerateTriangles(merged);
+  let triMat = new Int32Array(merged.index.count / 3);
+  let t = 0;
+  for (const pm of partMats) for (let k = 0; k < pm.tris; k++) triMat[t++] = pm.mat;
+  triMat = stripDegenerateTriangles(merged, triMat);
+  // material groups (parts were sorted by mat, so runs are contiguous)
+  merged.clearGroups();
+  let s = 0;
+  for (let i = 1; i <= triMat.length; i++) {
+    if (i === triMat.length || triMat[i] !== triMat[s]) {
+      merged.addGroup(s * 3, (i - s) * 3, triMat[s]);
+      s = i;
+    }
+  }
   merged.computeBoundingBox();
-  return merged;
+  return { geometry: merged, triMat };
+}
+
+function makeMaterials() {
+  return MATERIALS.map(m => new THREE.MeshStandardMaterial({
+    color: new THREE.Color(...m.color),
+    metalness: m.metalness,
+    roughness: m.roughness,
+  }));
 }
 
 function buildCharacter(scale = 1, prefix = '') {
   const { bones, root } = buildSkeleton(scale, prefix);
-  const geo = buildBody(scale);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x9a9ba0, roughness: 0.55, metalness: 0.05 });
-  const mesh = new THREE.SkinnedMesh(geo, mat);
+  const { geometry, triMat } = buildBody(scale);
+  const mesh = new THREE.SkinnedMesh(geometry, makeMaterials());
   mesh.name = MESH_NAME;
+  mesh.castShadow = true;
   const group = new THREE.Group();
   group.name = 'RoboMeshModel';
   group.add(root);
@@ -351,15 +463,16 @@ function buildCharacter(scale = 1, prefix = '') {
   group.updateMatrixWorld(true);
   mesh.bind(new THREE.Skeleton(bones), new THREE.Matrix4());
   mesh.frustumCulled = false;
-  return { group, mesh, bones, root };
+  return { group, mesh, bones, root, triMat };
 }
 
 /* ============================================================
- * 4. FBX EXPORT DATA — pulled once from a fresh cm-scale build,
- *    independent of viewer state.
+ * 5. FBX EXPORT DATA — pulled once from a fresh cm-scale build,
+ *    independent of viewer state (the stance pose never leaks:
+ *    exports rebuild the character in bind pose).
  * ============================================================ */
 function extractFbxData(prefix) {
-  const g = buildBody(1);
+  const { geometry: g, triMat } = buildBody(1);
   const pos = g.attributes.position, nrm = g.attributes.normal, uv = g.attributes.uv;
   const sIdx = g.attributes.skinIndex;
   const index = g.index.array;
@@ -399,13 +512,17 @@ function extractFbxData(prefix) {
       world: j.pos.slice(),
     };
   });
-  return { verts, polyIdx, normals, uvs, uvIndex, smoothing, clusters, bones, nV, nT };
+  return { verts, polyIdx, normals, uvs, uvIndex, smoothing, triMat, clusters, bones, nV, nT };
 }
 
 function lintFbxData(d) {
   const errs = [];
   if (d.normals.length !== d.nT * 9) errs.push(`normals length ${d.normals.length} != 9*tris ${d.nT * 9}`);
   if (d.smoothing.length !== d.nT) errs.push('smoothing length != tri count');
+  if (d.triMat.length !== d.nT) errs.push('material map length != tri count');
+  for (let t = 0; t < d.nT; t++) {
+    if (d.triMat[t] < 0 || d.triMat[t] >= MATERIALS.length) { errs.push('material index out of range'); break; }
+  }
   if (d.uvIndex.length !== d.nT * 3) errs.push('uvIndex length != corner count');
   for (let t = 0; t < d.nT; t++) {
     if (d.polyIdx[t * 3 + 2] >= 0) { errs.push(`tri ${t}: last index not negative`); break; }
@@ -413,6 +530,7 @@ function lintFbxData(d) {
   let weighted = 0;
   for (const cl of d.clusters) {
     weighted += cl.indexes.length;
+    if (cl.indexes.length === 0) errs.push('bone with no skinned vertices');
     if (cl.indexes.length !== cl.weights.length) errs.push('cluster indexes/weights length mismatch');
     for (const w of cl.weights) if (w !== 1) { errs.push('non-rigid weight found'); break; }
     for (const i of cl.indexes) if (i < 0 || i >= d.nV) { errs.push('cluster index out of range'); break; }
@@ -422,12 +540,12 @@ function lintFbxData(d) {
   for (const arr of [d.verts, d.normals]) {
     for (let i = 0; i < arr.length; i++) if (!Number.isFinite(arr[i])) { errs.push('non-finite value in geometry'); break; }
   }
-  if (d.nT >= 3000) errs.push(`triangle budget exceeded: ${d.nT}`);
+  if (d.nT >= 8000) errs.push(`triangle budget exceeded: ${d.nT}`);
   return errs;
 }
 
 /* ============================================================
- * 5. FBX DOCUMENT TREE — typed nodes shared by both serializers.
+ * 6. FBX DOCUMENT TREE — typed nodes shared by both serializers.
  *    Scalars: I int32, L int64, D double, S string, C bool.
  *    Arrays: d float64[], i int32[]. R raw bytes (binary only).
  * ============================================================ */
@@ -444,7 +562,7 @@ const P = (n, t1, t2, fl, ...vals) => N('P', [S(n), S(t1), S(t2), S(fl), ...vals
 const P70 = (...ps) => N('Properties70', [], ps);
 const IDENTITY16 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const translation16 = (x, y, z) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
-const CREATOR = 'Robo-Mesh-Model procedural mocap dummy generator';
+const CREATOR = 'Robo-Mesh-Model procedural humanoid platform generator';
 
 function modelNode(id, name, cls, t) {
   return N('Model', [L(id), S('Model::' + name), S(cls)], [
@@ -464,7 +582,8 @@ function modelNode(id, name, cls, t) {
 function buildFbxDoc(d) {
   let idc = 100000;
   const nid = () => idc++;
-  const geoId = nid(), meshModelId = nid(), matId = nid(), skinId = nid(), poseId = nid(), sceneId = nid();
+  const geoId = nid(), meshModelId = nid(), skinId = nid(), poseId = nid(), sceneId = nid();
+  const matIds = MATERIALS.map(nid);
   const boneModelIds = d.bones.map(nid);
   const attrIds = d.bones.map(nid);
   const clusterIds = d.bones.map(nid);
@@ -503,9 +622,9 @@ function buildFbxDoc(d) {
     N('LayerElementMaterial', [I(0)], [
       N('Version', [I(101)]),
       N('Name', [S('')]),
-      N('MappingInformationType', [S('AllSame')]),
+      N('MappingInformationType', [S('ByPolygon')]),
       N('ReferenceInformationType', [S('IndexToDirect')]),
-      N('Materials', [IA([0])]),
+      N('Materials', [IA(d.triMat)]),
     ]),
     N('Layer', [I(0)], [
       N('Version', [I(100)]),
@@ -524,19 +643,20 @@ function buildFbxDoc(d) {
       N('TypeFlags', [S('Skeleton')]),
     ]));
 
-  const material = N('Material', [L(matId), S('Material::MocapGray'), S('')], [
-    N('Version', [I(102)]),
-    N('ShadingModel', [S('phong')]),
-    N('MultiLayer', [I(0)]),
-    P70(
-      P('ShadingModel', 'KString', '', '', S('Phong')),
-      P('DiffuseColor', 'Color', '', 'A', D(0.604), D(0.608), D(0.62)),
-      P('AmbientColor', 'Color', '', 'A', D(0), D(0), D(0)),
-      P('SpecularColor', 'Color', '', 'A', D(0.06), D(0.06), D(0.06)),
-      P('Shininess', 'double', 'Number', 'A', D(10)),
-      P('Opacity', 'double', 'Number', 'A', D(1)),
-    ),
-  ]);
+  const materials = MATERIALS.map((m, i) =>
+    N('Material', [L(matIds[i]), S('Material::' + m.key), S('')], [
+      N('Version', [I(102)]),
+      N('ShadingModel', [S('phong')]),
+      N('MultiLayer', [I(0)]),
+      P70(
+        P('ShadingModel', 'KString', '', '', S('Phong')),
+        P('DiffuseColor', 'Color', '', 'A', D(m.color[0]), D(m.color[1]), D(m.color[2])),
+        P('AmbientColor', 'Color', '', 'A', D(0), D(0), D(0)),
+        P('SpecularColor', 'Color', '', 'A', D(0.06), D(0.06), D(0.06)),
+        P('Shininess', 'double', 'Number', 'A', D(m.shininess)),
+        P('Opacity', 'double', 'Number', 'A', D(1)),
+      ),
+    ]));
 
   const skin = N('Deformer', [L(skinId), S('Deformer::Skin_' + MESH_NAME), S('Skin')], [
     N('Version', [I(101)]),
@@ -569,7 +689,7 @@ function buildFbxDoc(d) {
   CC(meshModelId, 0);
   d.bones.forEach((b, i) => CC(boneModelIds[i], b.parent < 0 ? 0 : boneModelIds[b.parent]));
   CC(geoId, meshModelId);
-  CC(matId, meshModelId);
+  matIds.forEach(id => CC(id, meshModelId)); // connection order defines material slot order
   CC(skinId, geoId);
   d.bones.forEach((b, i) => {
     CC(clusterIds[i], skinId);
@@ -581,7 +701,7 @@ function buildFbxDoc(d) {
     GlobalSettings: 1,
     Model: models.length,
     Geometry: 1,
-    Material: 1,
+    Material: MATERIALS.length,
     Deformer: 1 + clusters.length,
     NodeAttribute: nodeAttrs.length,
     Pose: 1,
@@ -645,14 +765,14 @@ function buildFbxDoc(d) {
       N('Count', [I(total)]),
       ...Object.entries(counts).map(([k, v]) => N('ObjectType', [S(k)], [N('Count', [I(v)])])),
     ]),
-    N('Objects', [], [geometry, ...models, ...nodeAttrs, material, skin, ...clusters, pose]),
+    N('Objects', [], [geometry, ...models, ...nodeAttrs, ...materials, skin, ...clusters, pose]),
     N('Connections', [], conns),
     N('Takes', [], [N('Current', [S('')])]),
   ];
 }
 
 /* ============================================================
- * 6. ASCII SERIALIZER (FBX 7.4)
+ * 7. ASCII SERIALIZER (FBX 7.4)
  * ============================================================ */
 function fbxNum(v) {
   if (typeof v === 'bigint') return v.toString();
@@ -711,7 +831,7 @@ function serializeFbxAscii(roots) {
 }
 
 /* ============================================================
- * 7. BINARY SERIALIZER (FBX 7.4, uncompressed arrays)
+ * 8. BINARY SERIALIZER (FBX 7.4, uncompressed arrays)
  * ============================================================ */
 class BinWriter {
   constructor() { this.buf = new ArrayBuffer(1 << 20); this.dv = new DataView(this.buf); this.len = 0; }
@@ -800,7 +920,7 @@ function serializeFbxBinary(roots) {
 }
 
 /* ============================================================
- * 8. EXPORT ENTRY POINTS
+ * 9. EXPORT ENTRY POINTS
  * ============================================================ */
 function currentPrefix() { return ui.prefix.checked ? 'mixamorig:' : ''; }
 
@@ -827,31 +947,37 @@ function download(filename, blob) {
 }
 
 /* ============================================================
- * 9. VALIDATION — re-import our own output with three.js
- *    loaders. Necessary, not sufficient: FBXLoader ignores
- *    Documents/Definitions/GlobalSettings, so DCC-level checks
- *    live in verify/blender_check.py.
+ * 10. VALIDATION — re-import our own output with three.js
+ *     loaders. Necessary, not sufficient: FBXLoader ignores
+ *     Documents/Definitions/GlobalSettings, so DCC-level checks
+ *     live in verify/blender_check.py.
  * ============================================================ */
 function inspectImported(root) {
   const boneNames = [];
-  let smesh = null;
+  const smeshes = [];
   root.traverse(o => {
     if (o.isBone) boneNames.push(o.name);
-    if (o.isSkinnedMesh) smesh = o;
+    if (o.isSkinnedMesh) smeshes.push(o);
   });
-  let height = NaN;
-  if (smesh) {
+  let height = NaN, vertices = 0;
+  const mats = new Set();
+  let minY = Infinity, maxY = -Infinity;
+  for (const m of smeshes) {
     // Raw attribute bounds — SkinnedMesh bounding paths need a rendered
     // skeleton update, which these throwaway re-imports never get.
-    smesh.geometry.computeBoundingBox();
-    const bb = smesh.geometry.boundingBox;
-    height = bb.max.y - bb.min.y;
+    m.geometry.computeBoundingBox();
+    minY = Math.min(minY, m.geometry.boundingBox.min.y);
+    maxY = Math.max(maxY, m.geometry.boundingBox.max.y);
+    vertices += m.geometry.attributes.position.count;
+    (Array.isArray(m.material) ? m.material : [m.material]).forEach(x => mats.add(x.uuid));
   }
+  if (smeshes.length) height = maxY - minY;
   return {
     boneNames,
-    skinned: !!smesh,
-    skeletonSize: smesh ? smesh.skeleton.bones.length : 0,
-    vertices: smesh ? smesh.geometry.attributes.position.count : 0,
+    skinned: smeshes.length > 0,
+    skeletonSize: smeshes.length ? smeshes[0].skeleton.bones.length : 0,
+    vertices,
+    materials: mats.size,
     height,
   };
 }
@@ -871,7 +997,13 @@ async function runValidation() {
   try {
     const data = extractFbxData(prefix);
     const lintErrs = lintFbxData(data);
-    check(lintErrs.length === 0, 'lint: ' + (lintErrs.length ? lintErrs.join('; ') : 'geometry, weights, hierarchy'));
+    check(lintErrs.length === 0, 'lint: ' + (lintErrs.length ? lintErrs.join('; ') : 'geometry, weights, materials, hierarchy'));
+    let bindMinY = Infinity, bindMaxY = -Infinity;
+    for (let i = 1; i < data.verts.length; i += 3) {
+      bindMinY = Math.min(bindMinY, data.verts[i]);
+      bindMaxY = Math.max(bindMaxY, data.verts[i]);
+    }
+    const bindH = bindMaxY - bindMinY;
 
     const ascii = generateFbx('ascii');
     const bin = generateFbx('binary');
@@ -887,7 +1019,8 @@ async function runValidation() {
       check(r.skeletonSize === JOINTS.length, `${tag}: skeleton binds ${r.skeletonSize} bones`);
       check(r.boneNames.every(n => expected.has(n)), `${tag}: Mixamo name set`);
       check(r.vertices === data.nT * 3, `${tag}: ${r.vertices} polygon vertices (expect ${data.nT * 3})`);
-      check(Math.abs(r.height - 172) < 6, `${tag}: height ${r.height.toFixed(1)} cm`);
+      check(r.materials === MATERIALS.length, `${tag}: ${r.materials} material slots`);
+      check(Math.abs(r.height - bindH) < 1, `${tag}: height ${r.height.toFixed(1)} cm (bind ${bindH.toFixed(1)})`);
     }
     if (rA && rB) {
       check(rA.boneNames.join() === rB.boneNames.join() && rA.vertices === rB.vertices,
@@ -897,7 +1030,8 @@ async function runValidation() {
     const gltf = await new Promise((res, rej) => new GLTFLoader().parse(glbBuf, '', res, rej));
     const rG = inspectImported(gltf.scene);
     check(rG.skinned && rG.boneNames.length === JOINTS.length, `glb: skinned, ${rG.boneNames.length} bones`);
-    check(Math.abs(rG.height - 1.72) < 0.06, `glb: height ${rG.height.toFixed(2)} m`);
+    check(rG.materials === MATERIALS.length, `glb: ${rG.materials} materials`);
+    check(Math.abs(rG.height - bindH * 0.01) < 0.02, `glb: height ${rG.height.toFixed(2)} m`);
   } catch (e) {
     check(false, 'exception: ' + e.message);
     console.error(e);
@@ -909,9 +1043,11 @@ async function runValidation() {
 }
 
 /* ============================================================
- * 10. VIEWER
+ * 11. VIEWER — white studio, soft shadows, athletic stance
+ *     (pose-only; bind pose untouched).
  * ============================================================ */
 const ui = {
+  stance: document.getElementById('cb-stance'),
   wire: document.getElementById('cb-wire'),
   skel: document.getElementById('cb-skel'),
   labels: document.getElementById('cb-labels'),
@@ -921,41 +1057,111 @@ const ui = {
 const wrap = document.getElementById('viewport');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
 wrap.appendChild(renderer.domElement);
 const labelRenderer = new CSS2DRenderer();
 labelRenderer.domElement.id = 'labels';
 wrap.appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x17181c);
-const camera = new THREE.PerspectiveCamera(38, 1, 1, 5000);
-camera.position.set(210, 165, 300);
+scene.background = new THREE.Color(0xf2f3f5);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
+
+const camera = new THREE.PerspectiveCamera(36, 1, 1, 5000);
+camera.position.set(150, 105, 235);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 88, 0);
+controls.target.set(0, 74, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 
-scene.add(new THREE.HemisphereLight(0xdfe4ee, 0x36383d, 0.9));
-const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(160, 260, 180); scene.add(key);
-const fill = new THREE.DirectionalLight(0xbfd0e8, 0.7); fill.position.set(-220, 120, -60); scene.add(fill);
-const rim = new THREE.DirectionalLight(0xffffff, 1.1); rim.position.set(-60, 200, -240); scene.add(rim);
+const key = new THREE.DirectionalLight(0xffffff, 1.9);
+key.position.set(140, 240, 160);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -140; key.shadow.camera.right = 140;
+key.shadow.camera.top = 200; key.shadow.camera.bottom = -60;
+key.shadow.camera.far = 700;
+key.shadow.bias = -0.0002;
+key.shadow.radius = 5;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xdfe8f5, 0.55); fill.position.set(-220, 120, 40); scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffffff, 0.7); rim.position.set(-40, 180, -260); scene.add(rim);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd8dade, 0.35));
 
-const grid = new THREE.GridHelper(400, 40, 0x3a3d45, 0x26282e);
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(1600, 1600),
+  new THREE.ShadowMaterial({ opacity: 0.14 }),
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+const grid = new THREE.GridHelper(400, 40, 0xc9ccd2, 0xe0e2e6);
+grid.position.y = 0.05;
 scene.add(grid);
-scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.5, 30), 26, 0x4d5f8f, 8, 4));
+scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.5, 26), 22, 0x9aa7bd, 7, 3.5));
 
 const character = buildCharacter(1, '');
 scene.add(character.group);
+const boneByName = new Map(character.bones.map(b => [b.name, b]));
+
+/* athletic stance — viewer-only pose on top of the T-pose bind */
+const STANCE_POSE = (() => {
+  const p = {};
+  const set = (n, x, y, z) => { p[n] = [x, y, z]; };
+  set('Spine', -0.05, 0, 0);
+  set('Spine1', -0.03, 0, 0);
+  set('Neck', 0.07, 0, 0);
+  set('Head', 0.02, 0, 0);
+  for (const [S, s] of [['Left', 1], ['Right', -1]]) {
+    set(S + 'Arm', 0, 0, s * -0.92);
+    set(S + 'ForeArm', 0, s * -0.52, s * -0.10);
+    set(S + 'Hand', 0, s * -0.08, 0);
+    for (const f of ['Index', 'Middle', 'Ring', 'Pinky'])
+      for (let i = 1; i <= 3; i++) set(S + 'Hand' + f + i, 0, 0, s * -0.30);
+    set(S + 'HandThumb1', -0.12, s * -0.20, 0);
+    set(S + 'HandThumb2', 0, s * -0.22, 0);
+    set(S + 'HandThumb3', 0, s * -0.18, 0);
+    set(S + 'UpLeg', -0.17, 0, s * 0.03);
+    set(S + 'Leg', 0.34, 0, 0);
+    set(S + 'Foot', -0.17, 0, s * -0.03);
+  }
+  return p;
+})();
+
+function applyStance(on) {
+  for (const b of character.bones) {
+    const r = on ? STANCE_POSE[b.name] : null;
+    if (r) b.rotation.set(r[0], r[1], r[2]);
+    else b.rotation.set(0, 0, 0);
+  }
+  character.group.updateMatrixWorld(true);
+  refreshDots();
+}
 
 const skelHelper = new THREE.SkeletonHelper(character.root);
 scene.add(skelHelper);
+const dotArr = new Float32Array(JOINTS.length * 3);
 const dotGeo = new THREE.BufferGeometry();
-dotGeo.setAttribute('position', new THREE.Float32BufferAttribute(JOINTS.flatMap(j => j.pos), 3));
+dotGeo.setAttribute('position', new THREE.BufferAttribute(dotArr, 3));
 const dots = new THREE.Points(dotGeo, new THREE.PointsMaterial({
-  color: 0x9fd0ff, size: 2.6, sizeAttenuation: true, depthTest: false,
+  color: 0x2b6cff, size: 2.2, sizeAttenuation: true, depthTest: false,
 }));
 dots.renderOrder = 999;
 scene.add(dots);
+function refreshDots() {
+  const v = new THREE.Vector3();
+  character.bones.forEach((b, i) => {
+    b.getWorldPosition(v);
+    dotArr[i * 3] = v.x; dotArr[i * 3 + 1] = v.y; dotArr[i * 3 + 2] = v.z;
+  });
+  dotGeo.attributes.position.needsUpdate = true;
+  dotGeo.computeBoundingSphere();
+}
 
 for (const bone of character.bones) {
   const div = document.createElement('div');
@@ -964,14 +1170,16 @@ for (const bone of character.bones) {
   bone.add(new CSS2DObject(div));
 }
 
-const syncWire = () => { character.mesh.material.wireframe = ui.wire.checked; };
+const syncStance = () => applyStance(ui.stance.checked);
+const syncWire = () => { for (const m of character.mesh.material) m.wireframe = ui.wire.checked; };
 const syncSkel = () => { skelHelper.visible = dots.visible = ui.skel.checked; };
 const syncLabels = () => { labelRenderer.domElement.style.visibility = ui.labels.checked ? 'visible' : 'hidden'; };
+ui.stance.addEventListener('change', syncStance);
 ui.wire.addEventListener('change', syncWire);
 ui.skel.addEventListener('change', syncSkel);
 ui.labels.addEventListener('change', syncLabels);
 // Sync once at startup — browsers may restore checkbox state across reloads.
-syncWire(); syncSkel(); syncLabels();
+syncStance(); syncWire(); syncSkel(); syncLabels();
 
 function exportButton(id, fn) {
   const btn = document.getElementById(id);
@@ -982,13 +1190,13 @@ function exportButton(id, fn) {
   });
 }
 exportButton('btn-ascii', () => {
-  download('robo-mocap-dummy-ascii.fbx', new Blob([generateFbx('ascii')], { type: 'text/plain' }));
+  download('robo-mesh-ascii.fbx', new Blob([generateFbx('ascii')], { type: 'text/plain' }));
 });
 exportButton('btn-bin', () => {
-  download('robo-mocap-dummy-binary.fbx', new Blob([generateFbx('binary')], { type: 'application/octet-stream' }));
+  download('robo-mesh-binary.fbx', new Blob([generateFbx('binary')], { type: 'application/octet-stream' }));
 });
 exportButton('btn-glb', async () => {
-  download('robo-mocap-dummy.glb', new Blob([await generateGlb()], { type: 'model/gltf-binary' }));
+  download('robo-mesh.glb', new Blob([await generateGlb()], { type: 'model/gltf-binary' }));
 });
 document.getElementById('btn-validate').addEventListener('click', runValidation);
 ui.prefix.addEventListener('change', runValidation);
@@ -1002,14 +1210,16 @@ ui.prefix.addEventListener('change', runValidation);
   const bbox = g.boundingBox;
   document.getElementById('stat-height').textContent = (bbox.max.y - bbox.min.y).toFixed(0);
   console.info(`[robo-mesh-model] ${JOINTS.length} joints, ${tris} triangles, ` +
-    `${g.attributes.position.count} vertices, height ${(bbox.max.y - bbox.min.y).toFixed(1)} cm`);
-  if (tris >= 3000) console.warn('[robo-mesh-model] triangle budget exceeded');
+    `${g.attributes.position.count} vertices, height ${(bbox.max.y - bbox.min.y).toFixed(1)} cm, ` +
+    `${g.groups.length} material groups`);
+  if (tris >= 8000) console.warn('[robo-mesh-model] triangle budget exceeded');
 }
 
-/* hierarchy tree */
+/* hierarchy tree — finger chains collapsed by default */
 {
   const kids = new Map(JOINTS.map(j => [j.name, []]));
   for (const j of JOINTS) if (j.parent) kids.get(j.parent).push(j.name);
+  const isFinger = n => /Hand(Thumb|Index|Middle|Ring|Pinky)/.test(n);
   const build = name => {
     const c = kids.get(name);
     if (!c.length) {
@@ -1019,7 +1229,7 @@ ui.prefix.addEventListener('change', runValidation);
       return div;
     }
     const det = document.createElement('details');
-    det.open = true;
+    det.open = !isFinger(name);
     const sum = document.createElement('summary');
     sum.textContent = name;
     det.appendChild(sum);
@@ -1046,7 +1256,10 @@ renderer.setAnimationLoop(() => {
 });
 
 /* exposed for debugging + headless automation */
-window.__robo = { THREE, character, buildCharacter, extractFbxData, generateFbx, generateGlb, runValidation, JOINTS, PARTS };
+window.__robo = {
+  THREE, character, buildCharacter, extractFbxData, generateFbx, generateGlb,
+  runValidation, applyStance, JOINTS, PARTS, MATERIALS,
+};
 
 runValidation();
 </script>
