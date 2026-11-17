@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Robo Mesh Model — Humanoid Platform</title>
+<title>Robo Mesh Model — Ivory Mannequin Android</title>
 <style>
   :root {
     --bg: #f2f3f5;
@@ -101,6 +101,7 @@
     color: #a52a2a; font: 11px var(--mono); padding: 10px; display: none;
     white-space: pre-wrap;
   }
+  body.review #panel { display: none; }
 </style>
 <script>
   // Registered before the module so load-time failures are never silent.
@@ -126,8 +127,8 @@
   <div id="viewport"><div id="err"></div></div>
   <aside id="panel">
     <header>
-      <h1>Robo Mesh Model</h1>
-      <p>Compact humanoid platform — T-pose bind, Y-up, centimeters</p>
+      <h1>Ivory Mannequin Android</h1>
+      <p>Ball-jointed figure — T-pose bind, Y-up, centimeters</p>
     </header>
 
     <section class="stats">
@@ -137,7 +138,7 @@
     </section>
 
     <h2>Display</h2>
-    <div class="row"><input type="checkbox" id="cb-stance" checked><label for="cb-stance">Athletic stance <small>(viewer only)</small></label></div>
+    <div class="row"><input type="checkbox" id="cb-stance" checked><label for="cb-stance">Reference A-pose <small>(viewer only)</small></label></div>
     <div class="row"><input type="checkbox" id="cb-wire"><label for="cb-wire">Wireframe</label></div>
     <div class="row"><input type="checkbox" id="cb-skel"><label for="cb-skel">Skeleton (bones + joints)</label></div>
     <div class="row"><input type="checkbox" id="cb-labels"><label for="cb-labels">Joint name labels</label></div>
@@ -176,105 +177,225 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
+const PARAMS = new URLSearchParams(location.search);
+// Build stages mirror the sculpt-spec passes: 1 blockout (macro shells),
+// 2 structure (all meso parts), 3 features (micro seams + hardware),
+// 4 materials (ivory/brass/liner), 5 final lighting plate.
+const STAGE = Math.min(5, Math.max(1, parseInt(PARAMS.get('stage') || '5', 10) || 5));
+const REVIEW = PARAMS.get('review'); // front | tq | profile | hands
+
 /* ============================================================
  * 1. RIG — full Mixamo humanoid, 52 joints (15 finger joints
  *    per hand), world positions in cm. Rest rotations are
  *    identity everywhere: a bone's local transform is the pure
  *    translation childWorld - parentWorld. Bind pose is a
  *    strict T-pose: arms along ±X, legs down -Y, facing +Z.
- *    The athletic stance in the viewer is pose-only and never
- *    reaches an export.
+ *    Proportions follow the reference plate: 175 cm tall,
+ *    9.3 head-units, crotch at 49% of height.
  * ============================================================ */
 const JOINTS = (() => {
   const j = [];
   const add = (name, parent, x, y, z) => j.push({ name, parent, pos: [x, y, z] });
-  add('Hips', null, 0, 84, 0);
-  add('Spine', 'Hips', 0, 92, 0);
-  add('Spine1', 'Spine', 0, 99.5, 0);
-  add('Spine2', 'Spine1', 0, 107, 0);
-  add('Neck', 'Spine2', 0, 122, 0);
-  add('Head', 'Neck', 0, 128, 0);
+  add('Hips', null, 0, 97, 0);
+  add('Spine', 'Hips', 0, 106, 0);
+  add('Spine1', 'Spine', 0, 116, 0);
+  add('Spine2', 'Spine1', 0, 126, 0);
+  add('Neck', 'Spine2', 0, 146.6, 0);
+  add('Head', 'Neck', 0, 156.2, 0);
   for (const [S, s] of [['Left', 1], ['Right', -1]]) {
-    add(S + 'Shoulder', 'Spine2', s * 3.5, 118.5, 0);
-    add(S + 'Arm', S + 'Shoulder', s * 11.5, 118.5, 0);
-    add(S + 'ForeArm', S + 'Arm', s * 31.5, 118.5, 0);
-    add(S + 'Hand', S + 'ForeArm', s * 49.5, 118.5, 0);
-    add(S + 'HandThumb1', S + 'Hand', s * 51.8, 117.6, 2.8);
-    add(S + 'HandThumb2', S + 'HandThumb1', s * 53.6, 117.0, 4.4);
-    add(S + 'HandThumb3', S + 'HandThumb2', s * 55.0, 116.6, 5.6);
-    add(S + 'HandIndex1', S + 'Hand', s * 56.5, 118.5, 2.1);
-    add(S + 'HandIndex2', S + 'HandIndex1', s * 59.3, 118.5, 2.1);
-    add(S + 'HandIndex3', S + 'HandIndex2', s * 61.4, 118.5, 2.1);
-    add(S + 'HandMiddle1', S + 'Hand', s * 56.8, 118.5, 0.4);
-    add(S + 'HandMiddle2', S + 'HandMiddle1', s * 59.8, 118.5, 0.4);
-    add(S + 'HandMiddle3', S + 'HandMiddle2', s * 62.0, 118.5, 0.4);
-    add(S + 'HandRing1', S + 'Hand', s * 56.5, 118.5, -1.3);
-    add(S + 'HandRing2', S + 'HandRing1', s * 59.2, 118.5, -1.3);
-    add(S + 'HandRing3', S + 'HandRing2', s * 61.2, 118.5, -1.3);
-    add(S + 'HandPinky1', S + 'Hand', s * 55.9, 118.5, -2.9);
-    add(S + 'HandPinky2', S + 'HandPinky1', s * 58.2, 118.5, -2.9);
-    add(S + 'HandPinky3', S + 'HandPinky2', s * 59.9, 118.5, -2.9);
+    add(S + 'Shoulder', 'Spine2', s * 6.5, 142.5, 0);
+    add(S + 'Arm', S + 'Shoulder', s * 18, 140.5, 0);
+    add(S + 'ForeArm', S + 'Arm', s * 48.0, 140.5, 0);
+    add(S + 'Hand', S + 'ForeArm', s * 68.9, 140.5, 0);
+    add(S + 'HandThumb1', S + 'Hand', s * 70.80, 139.49, 2.80);
+    add(S + 'HandThumb2', S + 'HandThumb1', s * 73.16, 138.82, 4.70);
+    add(S + 'HandThumb3', S + 'HandThumb2', s * 74.95, 138.37, 6.16);
+    add(S + 'HandIndex1', S + 'Hand', s * 74.16, 140.5, 2.46);
+    add(S + 'HandIndex2', S + 'HandIndex1', s * 76.96, 140.5, 2.55);
+    add(S + 'HandIndex3', S + 'HandIndex2', s * 79.09, 140.5, 2.62);
+    add(S + 'HandMiddle1', S + 'Hand', s * 74.61, 140.5, 0.73);
+    add(S + 'HandMiddle2', S + 'HandMiddle1', s * 77.64, 140.5, 0.73);
+    add(S + 'HandMiddle3', S + 'HandMiddle2', s * 79.93, 140.5, 0.73);
+    add(S + 'HandRing1', S + 'Hand', s * 74.28, 140.5, -1.06);
+    add(S + 'HandRing2', S + 'HandRing1', s * 77.02, 140.5, -1.15);
+    add(S + 'HandRing3', S + 'HandRing2', s * 79.09, 140.5, -1.22);
+    add(S + 'HandPinky1', S + 'Hand', s * 73.38, 140.5, -2.74);
+    add(S + 'HandPinky2', S + 'HandPinky1', s * 75.62, 140.5, -2.87);
+    add(S + 'HandPinky3', S + 'HandPinky2', s * 77.36, 140.5, -2.96);
   }
   for (const [S, s] of [['Left', 1], ['Right', -1]]) {
-    add(S + 'UpLeg', 'Hips', s * 7.5, 80, 0);
-    add(S + 'Leg', S + 'UpLeg', s * 7.5, 46, 0);
-    add(S + 'Foot', S + 'Leg', s * 7.5, 10, 0);
-    add(S + 'ToeBase', S + 'Foot', s * 7.5, 2.5, 8.5);
+    add(S + 'UpLeg', 'Hips', s * 8.3, 93, 0);
+    add(S + 'Leg', S + 'UpLeg', s * 8.3, 52.6, 0);
+    add(S + 'Foot', S + 'Leg', s * 8.3, 15.4, 0);
+    add(S + 'ToeBase', S + 'Foot', s * 8.3, 2.8, 9.5);
   }
   return j;
 })();
 const JINDEX = new Map(JOINTS.map((j, i) => [j.name, i]));
-const MESH_NAME = 'RoboMesh';
+const MESH_NAME = 'IvoryMannequin';
 
 /* ============================================================
  * 2. MATERIALS — three slots, exported per-polygon.
- *    0 panel: white composite shell
- *    1 joint: dark anodized alloy (actuators, struts, pads)
- *    2 sensor: near-black visor glass
+ *    0 shell: warm ivory satin composite
+ *    1 brass: polished hinge hardware (wrist pins, knuckles,
+ *      finger rings, knee/ankle pin discs)
+ *    2 liner: dark warm socket liner / seam grooves
  * ============================================================ */
 const MATERIALS = [
-  { key: 'PanelComposite', color: [0.878, 0.886, 0.894], metalness: 0.15, roughness: 0.45, shininess: 14 },
-  { key: 'JointAlloy', color: [0.208, 0.224, 0.243], metalness: 0.85, roughness: 0.34, shininess: 45 },
-  { key: 'SensorGlass', color: [0.047, 0.055, 0.07], metalness: 0.4, roughness: 0.12, shininess: 90 },
+  { key: 'IvoryShell', color: [0.902, 0.847, 0.776], metalness: 0.0, roughness: 0.5, shininess: 18 },
+  { key: 'BrassHardware', color: [0.604, 0.478, 0.29], metalness: 1.0, roughness: 0.3, shininess: 60 },
+  { key: 'SocketLiner', color: [0.29, 0.22, 0.149], metalness: 0.0, roughness: 0.85, shininess: 4 },
 ];
 
 /* ============================================================
- * 3. BODY PARTS — each rigidly skinned to one bone.
- *    kind: capsule | cyl (actuator disc) | rbox | link
- *    (capsule spanning two explicit points, used for fingers
- *    and struts). Parts are sorted by material so triangles
- *    form three contiguous runs.
+ * 3. BODY PARTS
+ *    kind: shell (ring lathe with shaped edges) | sph | cyl |
+ *    rbox | link | tube (surface seam line) | ext (side-profile
+ *    extrude for foot/toe). Every part is rigidly skinned to
+ *    one bone (shell rows may split across two spine bones).
+ *    stage tags parts into build passes; exports always build
+ *    the full model.
  * ============================================================ */
+const FRONT = 0; // shell phi=0 faces +Z
+
 const PARTS = (() => {
   const p = [];
   const J = name => JOINTS[JINDEX.get(name)].pos;
-  const cap = (bone, o) => p.push({ kind: 'capsule', bone, seg: 'std', axis: 'y', mat: 0, ...o });
-  const cyl = (bone, o) => p.push({ kind: 'cyl', bone, axis: 'x', mat: 1, ...o });
-  const box = (bone, o) => p.push({ kind: 'rbox', bone, seg: 2, mat: 0, ...o });
-  const link = (bone, from, to, r, o) => p.push({ kind: 'link', bone, from, to, r, seg: 'xs', mat: 0, ...o });
+  const shell = (bone, o) => p.push({ kind: 'shell', bone, mat: 0, rs: 14, stage: 1, ...o });
+  // exposed balls, pauldron petals, palm domes are silhouette parts → stage 1
+  const sph = (bone, o) => p.push({ kind: 'sph', bone, mat: 0, stage: 1, ...o });
+  const cyl = (bone, o) => p.push({ kind: 'cyl', bone, axis: 'x', mat: 1, stage: 3, ...o });
+  const box = (bone, o) => p.push({ kind: 'rbox', bone, seg: 1, mat: 1, stage: 3, ...o });
+  const link = (bone, from, to, r, o) => p.push({ kind: 'link', bone, from, to, r, seg: 'xs', mat: 0, stage: 1, ...o });
+  const tube = (bone, pts, r, o) => p.push({ kind: 'tube', bone, pts, r, mat: 2, stage: 3, ...o });
 
-  // core
-  box('Hips', { w: 17, h: 10, d: 11, rad: 3, at: [0, 83.5, 0] });
-  cyl('Spine', { r: 4.6, h: 5, axis: 'y', at: [0, 91.5, 0] });                    // waist actuator
-  box('Spine1', { w: 14.5, h: 8, d: 9.5, rad: 2.5, at: [0, 99.5, 0] });
-  box('Spine2', { w: 21, h: 16, d: 12, rad: 4.2, at: [0, 112, 0] });              // chest shell
-  box('Spine2', { w: 13, h: 12, d: 4.5, rad: 1.6, at: [0, 112.5, -7.5], mat: 1 }); // battery pack
-  cyl('Neck', { r: 2.3, h: 4.5, axis: 'y', at: [0, 124, 0] });
-  cap('Head', { r: 8, l: 4, seg: 'hi', at: [0, 136.5, 0], scl: [0.95, 1, 1.02] });
-  box('Head', { w: 12.5, h: 5.2, d: 3.4, rad: 1.6, at: [0, 137, 7], mat: 2 });    // sensor visor
-  cyl('Head', { r: 2.2, h: 1.8, at: [8, 137, 0] });                               // side sensor pods
-  cyl('Head', { r: 2.2, h: 1.8, at: [-8, 137, 0] });
+  /* ---- head: egg revolved profile, depth-biased ---- */
+  shell('Head', {
+    sid: 'head',
+    prof: [[156.4, 2.0], [158.2, 3.25], [160.4, 4.15], [163.0, 4.75], [165.6, 5.0],
+           [168.2, 5.0], [170.8, 4.65], [173.2, 3.8], [174.3, 3.0], [174.8, 1.7], [175.0, 0.02]],
+    sclX: 1.03, sclZ: 1.22, rs: 14, closedBottom: true,
+  });
+  // face-plate seam: oval on the egg surface, front hemisphere
+  p.push({ kind: 'faceRing', sid: 'head/face-plate-seam', relief: true, bone: 'Head', mat: 2, stage: 3 });
+
+  /* ---- neck: tapered column flowing into collar ---- */
+  shell('Neck', {
+    sid: 'neck',
+    prof: [[144.6, 3.4], [146.4, 2.95], [148.4, 2.6], [151.0, 2.4], [153.6, 2.42], [155.6, 2.35], [156.8, 2.2]],
+    sclZ: 1.15, rs: 12,
+  });
+  p.push({ kind: 'torus', sid: 'neck', bone: 'Neck', mat: 0, stage: 2,
+           R: 2.9, tr: 0.42, at: [0, 146.7, 0], scl: [1, 0.7, 1.15], seg: [10, 4] }); // collar ring the neck seats into
+  p.push({ kind: 'torus', sid: 'neck/collar-seam', relief: true, bone: 'Neck', mat: 2, stage: 3,
+           R: 2.66, tr: 0.08, at: [0, 146.85, 0], scl: [1, 1, 1.15], seg: [12, 3] });
+
+  /* ---- chest plate: smile under-edge, collar opening ---- */
+  shell('Spine2', {
+    sid: 'torsoChest',
+    prof: [[124.8, 10.15], [127.0, 10.55], [129.5, 10.8], [132.0, 10.9], [135.0, 10.85],
+           [138.0, 10.55], [140.6, 10.1], [142.8, 9.4], [144.8, 8.4], [146.2, 6.6], [147.7, 3.9]],
+    sclX: 1.025, sclZ: 0.63, rs: 14, lip: true, lipDy: 0.45, lipR: 0.9,
+    botEdge: phi => 2.6 * (1 - Math.cos(phi)) / 2 * (Math.abs(wrapPi(phi)) < 2.1 ? 1 : 0.55) + smileBack(phi),
+    topEdge: phi => { // small clavicle notch at the front; traps stay high
+      const a = wrapPi(phi);
+      return -0.6 * bump(a, 0, 0.7) - 0.4 * bump(Math.abs(a), Math.PI, 0.7);
+    },
+    edgeFade: 0.32,
+  });
+  // clavicle yoke: shoulder shelf spanning collar to shoulder caps
+  p.push({ kind: 'sph', sid: 'torsoChest', bone: 'Spine2', mat: 0, stage: 1,
+           r: 7.4, at: [0, 143.6, 0.2], scl: [1.92, 0.38, 0.74], ws: 12, hs: 5 });
+  // dark undercut line tracing the smile edge over the belly plate
+  p.push({ kind: 'edgeTube', sid: 'torsoChest/under-edge-gap', relief: true, bone: 'Spine2', mat: 2, stage: 3,
+           baseY: 124.8, r: 10.15, sclX: 1.025, sclZ: 0.63, dy: -0.3, rIn: 0.985, tr: 0.13, seg: 14,
+           edge: phi => 2.6 * (1 - Math.cos(phi)) / 2 * (Math.abs(wrapPi(phi)) < 2.1 ? 1 : 0.55) + smileBack(phi) });
+
+  /* ---- belly plate: waist pinch, egg swell; spans two spine bones ---- */
+  shell('Spine1', {
+    sid: 'torsoBelly',
+    prof: [[101.2, 10.55], [104.0, 10.25], [107.5, 9.8], [111.0, 9.4], [114.0, 9.3],
+           [116.3, 9.2], [118.5, 9.35], [121.0, 9.45], [124.0, 9.8], [126.6, 10.0]],
+    sclX: 1.025, sclZ: 0.63, rs: 14,
+    boneByY: [[110.5, 'Spine'], [Infinity, 'Spine1']],
+    botEdge: phi => -1.0 * bump(wrapPi(phi), 0, 0.9),
+    edgeFade: 0.22,
+  });
+
+  /* ---- pelvis briefs: W top edge, V crotch, leg arches ---- */
+  shell('Hips', {
+    sid: 'pelvis',
+    prof: [[88.3, 9.8], [89.8, 11.6], [92.0, 13.4], [94.5, 14.4], [96.5, 14.2],
+           [98.5, 13.5], [100.2, 12.9], [101.4, 12.2]],
+    sclX: 1.045, sclZ: 0.55, rs: 16, lip: true,
+    topEdge: phi => {
+      const a = wrapPi(phi);
+      return 0.55 * (bump(a, 0.82, 0.8) + bump(a, -0.82, 0.8)) - 0.7 * bump(a, 0, 0.55)
+           + 0.5 * bump(Math.abs(a), Math.PI, 1.1);
+    },
+    botEdge: phi => {
+      const a = wrapPi(phi);
+      return 4.0 * (bump(a, 1.05, 0.72) + bump(a, -1.05, 0.72)) - 0.2 * bump(a, 0, 0.5)
+           + 1.6 * bump(Math.abs(a), Math.PI, 1.4);
+    },
+    edgeFade: 0.42,
+  });
+  p.push({ kind: 'edgeTube', sid: 'pelvis/w-top-edge', relief: true, bone: 'Hips', mat: 2, stage: 3,
+           baseY: 101.4, r: 12.2, sclX: 1.045, sclZ: 0.55, dy: -0.26, rIn: 0.972, tr: 0.13, seg: 14,
+           edge: phi => {
+             const a = wrapPi(phi);
+             return 0.55 * (bump(a, 0.82, 0.8) + bump(a, -0.82, 0.8)) - 0.7 * bump(a, 0, 0.55)
+                  + 0.5 * bump(Math.abs(a), Math.PI, 1.1);
+           } });
+
+  /* ---- hip socket liners: dark spheres in the cutout gap ---- */
+  for (const [S, s] of [['Left', 1], ['Right', -1]]) {
+    sph(S + 'UpLeg', { sid: 'hipSocket', r: 4.3, at: [s * 8.3, 92.4, 0], ws: 6, hs: 4, mat: 2 });
+  }
 
   for (const [S, s] of [['Left', 1], ['Right', -1]]) {
-    // arm chain
-    cyl(S + 'Shoulder', { r: 3.7, h: 4.6, at: [s * 8, 118.5, 0] });
-    cap(S + 'Arm', { r: 3.4, l: 12, axis: 'x', at: [s * 21.3, 118.5, 0], scl: [1, 1, 0.88] });
-    cyl(S + 'ForeArm', { r: 3.1, h: 4.2, axis: 'z', at: [s * 31.5, 118.5, 0] });  // elbow actuator
-    cap(S + 'ForeArm', { r: 2.9, l: 11, axis: 'x', at: [s * 40.7, 118.5, 0], scl: [1, 1, 0.85] });
-    cyl(S + 'Hand', { r: 2.4, h: 2.6, at: [s * 50.3, 118.5, 0] });                // wrist actuator
-    box(S + 'Hand', { w: 5.8, h: 2.8, d: 7.2, rad: 1, at: [s * 53.8, 118.4, 0] }); // palm
-    // dexterous fingers: one link capsule per phalanx
-    const radii = { Thumb: 1.05, Index: 0.95, Middle: 0.95, Ring: 0.9, Pinky: 0.82 };
+    /* ---- shoulder pauldrons: two layered petal caps ---- */
+    sph(S + 'Shoulder', { sid: 'pauldronPetalUpper', r: 5.3, at: [s * 15.6, 143.7, 0], scl: [1, 0.58, 1.06],
+      ws: 10, hs: 5, thetaLength: 2.35, rotZ: s * -0.3 });
+    sph(S + 'Shoulder', { sid: 'pauldronPetalUpper/petal-gap', relief: true, r: 4.35, at: [s * 16.1, 142.6, 0], scl: [1, 0.5, 0.98],
+      ws: 8, hs: 3, thetaLength: 2.0, rotZ: s * -0.36, mat: 2 });
+    sph(S + 'Shoulder', { sid: 'pauldronPetalLower', r: 4.6, at: [s * 17.8, 141.4, 0], scl: [1, 0.55, 1.05],
+      ws: 10, hs: 5, thetaLength: 2.3, rotZ: s * -0.48 });
+
+    /* ---- upper arm: tapered clamshell along +X (T-pose) ---- */
+    shell(S + 'Arm', {
+      sid: 'upperArm',
+      prof: [[-2.2, 3.5], [1.5, 4.1], [6.0, 4.0], [11.0, 3.74], [16.0, 3.48], [21.0, 3.12], [26.0, 2.84], [28.6, 2.72]],
+      rs: 11, axis: 'x', sgn: s, org: J(S + 'Arm'), sclZ: 1.0, lipEnd: true,
+    });
+    tube(S + 'Arm', limbSeam(J(S + 'Arm'), s, [[1.2, 3.47], [9, 3.46], [16, 3.15], [23, 2.8], [28.2, 2.6]], 0.42), 0.095, { sid: 'upperArm/upperarm-seam', relief: true });
+
+    /* ---- elbow ball ---- */
+    sph(S + 'ForeArm', { sid: 'elbowBall', r: 2.85, at: [s * 48.0, 140.5, 0], ws: 9, hs: 6 });
+
+    /* ---- forearm: cradle, slim wrist, offset lip ---- */
+    shell(S + 'ForeArm', {
+      sid: 'forearm',
+      prof: [[1.6, 2.82], [3.0, 3.02], [6.0, 2.9], [9.5, 2.68], [13.0, 2.4],
+             [16.2, 2.08], [18.3, 1.95], [18.6, 2.07], [19.4, 1.82]],
+      rs: 11, axis: 'x', sgn: s, org: J(S + 'ForeArm'), sclZ: 1.0, lip: true, lipEnd: true,
+    });
+    tube(S + 'ForeArm', limbSeam(J(S + 'ForeArm'), s, [[2.1, 2.68], [7, 2.58], [12, 2.3], [16, 2.0], [18.9, 1.8]], 0.42), 0.09, { sid: 'forearm/forearm-seam', relief: true });
+
+    /* ---- wrist: brass pin collar ---- */
+    cyl(S + 'Hand', { sid: 'wristPin', r: 0.95, h: 2.6, at: [s * 68.5, 140.5, 0] });
+
+    /* ---- palm: back-of-hand dome + thumb root ball ---- */
+    sph(S + 'Hand', { sid: 'palm', r: 2.1, at: [s * 71.0, 140.35, 0.1], scl: [1.95, 0.44, 1.62], ws: 10, hs: 6 });
+    sph(S + 'Hand', { sid: 'palm/thumb-ball', r: 1.05, at: [s * 69.9, 139.8, 2.2], ws: 7, hs: 5 });
+
+    /* ---- brass knuckle row at the MCP line ---- */
+    for (const z of [2.2, 0.65, -0.95, -2.45]) {
+      box(S + 'Hand', { sid: 'knuckleRow', w: 0.9, h: 0.75, d: 0.92, rad: 0.16, at: [s * 74.1, 141.15, z * 1.12] });
+    }
+
+    /* ---- fingers: capsule phalanges + brass hinge rings ---- */
+    const radii = { Thumb: 0.66, Index: 0.62, Middle: 0.64, Ring: 0.58, Pinky: 0.5 };
     for (const f of Object.keys(radii)) {
       for (let i = 1; i <= 3; i++) {
         const a = J(S + 'Hand' + f + i);
@@ -284,87 +405,286 @@ const PARTS = (() => {
           const prev = J(S + 'Hand' + f + (i - 1));
           const d = [a[0] - prev[0], a[1] - prev[1], a[2] - prev[2]];
           const len = Math.hypot(...d) || 1;
-          const tip = f === 'Thumb' ? 1.5 : 1.7;
+          const tip = f === 'Thumb' ? 1.85 : 2.5;
           b = [a[0] + d[0] / len * tip, a[1] + d[1] / len * tip, a[2] + d[2] / len * tip];
         }
-        link(S + 'Hand' + f + i, a, b, radii[f]);
+        const taper = [1, 0.9, 0.8][i - 1];
+        link(S + 'Hand' + f + i, a, b, radii[f] * taper, { sid: 'fingers' });
+        if (i >= 2) { // brass hinge ring at every inter-segment joint
+          p.push({ kind: 'hinge', sid: 'fingers/finger-hinges', bone: S + 'Hand' + f + i, at: a.slice(),
+                   r: radii[f] * taper * 1.14, h: radii[f] * 1.05, mat: 1, stage: 3 });
+        }
       }
     }
-    // leg chain
-    cyl(S + 'UpLeg', { r: 4.1, h: 5.2, at: [s * 7.5, 80, 0] });                   // hip actuator
-    cap(S + 'UpLeg', { r: 4.4, l: 21, at: [s * 7.5, 63.5, 0.4], scl: [1, 1, 0.92] });
-    cyl(S + 'Leg', { r: 3.9, h: 4.8, at: [s * 7.5, 46, 0] });                     // knee actuator
-    cap(S + 'Leg', { r: 3.5, l: 23, at: [s * 7.5, 28.5, 0.6], scl: [1, 1, 0.9] });
-    link(S + 'Leg', [s * 7.5, 43, -3.4], [s * 7.5, 13.5, -2.2], 1.1, { mat: 1 }); // shin strut
-    cyl(S + 'Foot', { r: 2.7, h: 3.6, at: [s * 7.5, 10, 0] });                    // ankle actuator
-    box(S + 'Foot', { w: 8, h: 3, d: 15.5, rad: 1.2, at: [s * 7.5, 3, 2.8] });    // foot plate
-    box(S + 'Foot', { w: 7, h: 1.6, d: 5.5, rad: 0.7, at: [s * 7.5, 1.4, -3.2], mat: 1 }); // heel pad
-    box(S + 'ToeBase', { w: 7, h: 2.4, d: 6, rad: 1, at: [s * 7.5, 2.2, 10], mat: 1 });    // toe pad
+
+    /* ---- thigh: trochanter point, taper, vent slot, seam ---- */
+    shell(S + 'UpLeg', {
+      sid: 'thigh',
+      prof: [[-36.8, 3.75], [-35.8, 3.9], [-33.0, 4.38], [-27.0, 5.3], [-20.0, 6.3],
+             [-13.0, 7.15], [-7.0, 7.65], [-3.0, 7.7], [0, 7.6], [2.8, 6.95]],
+      rs: 13, axis: 'y', org: J(S + 'UpLeg'), sclX: 1.02, sclZ: 0.91, lip: true,
+      topEdge: phi => 1.6 * bump(wrapPi(phi), s > 0 ? 1.35 : -1.35, 0.95),
+      edgeFade: 0.2,
+    });
+    p.push({ kind: 'rbox', sid: 'thigh/thigh-vent', relief: true, bone: S + 'UpLeg', w: 0.3, h: 5.6, d: 0.32, rad: 0.1, seg: 1,
+             at: [s * 13.35, 84, 3.55], rotY: s * 0.72, mat: 2, stage: 3 });
+    tube(S + 'UpLeg', limbSeamY(J(S + 'UpLeg'), s * -0.28,
+      [[-1, 6.85], [-8, 7.3], [-16, 6.7], [-26, 5.6], [-35, 4.2], [-36.6, 3.75]]), 0.1, { sid: 'thigh/thigh-seam', relief: true });
+
+    /* ---- knee: ball + brass pin disc ---- */
+    sph(S + 'Leg', { sid: 'kneeBall', r: 3.45, at: [s * 8.3, 52.6, 0], ws: 9, hs: 6 });
+    cyl(S + 'Leg', { sid: 'kneePinDisc', r: 3.5, h: 0.16, at: [s * 8.3, 52.6, 0], seg: 8 });
+
+    /* ---- shin: W cradle, calf swell, slim ankle, seam ---- */
+    shell(S + 'Leg', {
+      sid: 'shin',
+      prof: [[-34.7, 2.12], [-33.4, 2.3], [-30.2, 2.95], [-25.4, 3.75], [-19.6, 4.28],
+             [-14.6, 4.5], [-9.6, 4.55], [-5.6, 4.4], [-3.8, 3.95], [-2.8, 3.3]],
+      rs: 13, axis: 'y', org: J(S + 'Leg'), sclX: 1.02, sclZ: 1.15, lip: true, lipEnd: true,
+      topEdge: phi => {
+        const a = wrapPi(phi);
+        return 0.7 * (bump(a, 0.66, 0.45) + bump(a, -0.66, 0.45)) - 0.3 * bump(a, 0, 0.34)
+             - 0.6 * bump(Math.abs(a), Math.PI, 0.9);
+      },
+      edgeFade: 0.16,
+    });
+    p.push({ kind: 'torus', sid: 'shin/shin-cradle', relief: true, bone: S + 'Leg', mat: 2, stage: 3,
+             R: 2.95, tr: 0.13, at: [s * 8.3, 50.5, 0], scl: [1, 1, 1.12], seg: [12, 3] });
+    tube(S + 'Leg', limbSeamY(J(S + 'Leg'), 0,
+      [[-2.4, 4.25], [-8, 4.56], [-15, 4.45], [-23, 3.6], [-30, 2.75], [-34.8, 2.2]]), 0.095, { sid: 'shin/shin-seam', relief: true });
+
+    /* ---- ankle: ball + brass pin disc ---- */
+    sph(S + 'Foot', { sid: 'ankleBall', r: 2.4, at: [s * 8.3, 15.4, 0], ws: 8, hs: 5 });
+    cyl(S + 'Foot', { sid: 'anklePinDisc', r: 2.45, h: 0.14, at: [s * 8.3, 15.4, 0], seg: 9 });
+
+    /* ---- bootie foot: cuff wraps ankle ball; toe cap is its own
+     *      panel on ToeBase (the toe-cap seam is a real break) ---- */
+    p.push({ kind: 'ext', sid: 'foot', bone: S + 'Foot', mat: 0, stage: 1, x: s * 8.3, w: 5.9, taperTop: 0.24,
+      pts: [[-5.8, 0], [-6.35, 1.2], [-6.55, 3.0], [-6.15, 5.6], [-5.15, 9.2], [-3.95, 12.9],
+            [-2.75, 15.7], [-0.75, 16.7], [1.15, 15.9], [2.15, 13.2], [2.75, 10.2], [3.45, 7.3],
+            [4.95, 5.1], [7.15, 4.05], [9.35, 3.7], [9.6, 1.9], [9.45, 0.7], [9.1, 0]] });
+    p.push({ kind: 'torus', sid: 'foot/cuff-wrap', relief: true, bone: S + 'Foot', mat: 2, stage: 3,
+             R: 2.05, tr: 0.13, at: [s * 8.3, 16.3, 0.3], scl: [1, 1, 1.15], seg: [12, 3] });
+    p.push({ kind: 'ext', sid: 'foot/toe-cap', bone: S + 'ToeBase', mat: 0, stage: 1, x: s * 8.3, w: 6.05,
+      pts: [[9.9, 0], [9.8, 3.5], [11.6, 3.25], [13.6, 2.6], [14.55, 1.75], [14.7, 0.8], [14.3, 0]] });
   }
   return p.sort((a, b) => a.mat - b.mat); // contiguous material runs after merge
 })();
 const CAP_SEGS = { xs: [1, 6], lo: [2, 6], std: [3, 7], hi: [4, 10] }; // [capSegments, radialSegments]
 
-/* ============================================================
- * 4. CHARACTER BUILD
- * ============================================================ */
-function buildSkeleton(scale, prefix) {
-  const bones = [];
-  const byName = new Map();
-  for (const j of JOINTS) {
-    const b = new THREE.Bone();
-    b.name = prefix + j.name;
-    const pp = j.parent ? JOINTS[JINDEX.get(j.parent)].pos : [0, 0, 0];
-    b.position.set((j.pos[0] - pp[0]) * scale, (j.pos[1] - pp[1]) * scale, (j.pos[2] - pp[2]) * scale);
-    if (j.parent) byName.get(j.parent).add(b);
-    bones.push(b);
-    byName.set(j.name, b);
+/* ---- shaping helpers used by the PARTS table ---- */
+function wrapPi(a) { a = a % (Math.PI * 2); return a > Math.PI ? a - Math.PI * 2 : a < -Math.PI ? a + Math.PI * 2 : a; }
+function bump(x, c, w) { const t = (x - c) / w; return Math.exp(-t * t * 2.2); }
+function smileBack(phi) { const a = Math.abs(wrapPi(phi)); return a > 2.1 ? 1.6 * (a - 2.1) / (Math.PI - 2.1) : 0; }
+function ringPath(R, y, sclZ, n) {
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = i / n * Math.PI * 2;
+    pts.push([Math.sin(a) * R, y, Math.cos(a) * R * sclZ]);
   }
-  return { bones, root: bones[0] };
+  return pts;
+}
+// seam line down a limb shell built along ±X: offset phi radians from the front (+Z)
+function limbSeam(org, s, prof, phiOff) {
+  return prof.map(([d, r]) => [org[0] + s * d, org[1] + Math.sin(phiOff) * r * 1.02, org[2] + Math.cos(phiOff) * r * 1.02]);
+}
+// seam line down a vertical limb shell: prof entries [dy, r], phiOff from front
+function limbSeamY(org, phiOff, prof) {
+  return prof.map(([dy, r]) => [org[0] + Math.sin(phiOff) * r * 1.02, org[1] + dy, org[2] + Math.cos(phiOff) * r * 1.02]);
+}
+
+/* ============================================================
+ * 4. GEOMETRY BUILDERS
+ * ============================================================ */
+// Ring-lathe shell with per-angle shaped edges. prof: [[y|d, r], ...]
+// bottom→top in local units; axis 'y' hangs the profile below org,
+// axis 'x' lays it along ±X from org. topEdge/botEdge(phi) shift the
+// edge rings with a smooth falloff (edgeFade fraction of the profile).
+// lip folds the open rim inward so panel edges read with thickness.
+function shellGeometry(part) {
+  const rs = part.rs, prof = part.prof.slice();
+  const sclX = part.sclX ?? 1, sclZ = part.sclZ ?? 1;
+  const rows0 = prof.length;
+  const y0 = prof[0][0], y1 = prof[rows0 - 1][0];
+  const span = y1 - y0 || 1;
+  const pos = [], uv = [];
+  const rings = [];
+  for (let i = 0; i < rows0; i++) rings.push({ y: prof[i][0], r: prof[i][1], t: (prof[i][0] - y0) / span, edge: 1 });
+  if (part.lip) {
+    const first = rings[0];
+    rings.unshift({ y: first.y + (part.lipDy ?? 0.5), r: first.r * (part.lipR ?? 0.86), t: first.t, edge: 1 });
+  }
+  if (part.lipEnd) {
+    const last = rings[rings.length - 1];
+    rings.push({ y: last.y - (part.lipDy ?? 0.5), r: last.r * (part.lipR ?? 0.86), t: last.t, edge: 1 });
+  }
+  const fade = part.edgeFade ?? 0.25;
+  const wgt = t => Math.max(0, 1 - t / fade);
+  for (const ring of rings) {
+    for (let j = 0; j < rs; j++) {
+      const phi = j / rs * Math.PI * 2;
+      let y = ring.y;
+      if (part.botEdge) y += part.botEdge(phi) * wgt(ring.t) * ring.edge;
+      if (part.topEdge) y += part.topEdge(phi) * wgt(1 - ring.t) * ring.edge;
+      let px = Math.sin(phi) * ring.r * sclX;
+      let py = y;
+      let pz = Math.cos(phi) * ring.r * sclZ;
+      pos.push(px, py, pz);
+      uv.push(j / rs, ring.t);
+    }
+  }
+  const idx = [];
+  const rows = rings.length;
+  for (let i = 0; i < rows - 1; i++) {
+    for (let j = 0; j < rs; j++) {
+      const a = i * rs + j, b = i * rs + (j + 1) % rs;
+      const c = (i + 1) * rs + j, d = (i + 1) * rs + (j + 1) % rs;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  if (part.closedBottom) {
+    // fan over the first real ring (prof already tapers to ~0 for closed tops)
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  // orient + place
+  if (part.axis === 'x') {
+    g.rotateZ(part.sgn > 0 ? -Math.PI / 2 : Math.PI / 2);
+  }
+  if (part.org) g.translate(part.org[0], part.org[1], part.org[2]);
+  g.computeVertexNormals();
+  return g;
+}
+
+function faceRingGeometry() {
+  // sample the head egg profile to keep the seam on the surface
+  const prof = [[156.4, 2.0], [158.2, 3.25], [160.4, 4.15], [163.0, 4.75], [165.6, 5.0],
+                [168.2, 5.0], [170.8, 4.6], [173.0, 3.6], [174.5, 1.9], [175.0, 0.02]];
+  const rAt = y => {
+    for (let i = 0; i < prof.length - 1; i++) {
+      const [y0, r0] = prof[i], [y1, r1] = prof[i + 1];
+      if (y >= y0 && y <= y1) return r0 + (r1 - r0) * (y - y0) / (y1 - y0);
+    }
+    return prof[prof.length - 1][1];
+  };
+  const pts = [];
+  const n = 26, yc = 165.1, by = 6.2, maxPhi = 0.62;
+  const rMid = rAt(yc);
+  for (let i = 0; i < n; i++) {
+    const t = i / n * Math.PI * 2;
+    const y = yc + by * Math.cos(t);
+    const r = rAt(Math.min(174.6, Math.max(156.6, y))) * 1.015;
+    // widen phi where the egg narrows so the seam projects as a round oval
+    const phi = maxPhi * Math.sin(t) * Math.min(1.6, rMid / r);
+    pts.push(new THREE.Vector3(Math.sin(phi) * r, y, Math.cos(phi) * r * 1.22));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts, true);
+  return new THREE.TubeGeometry(curve, 24, 0.07, 3, true);
 }
 
 function partGeometry(part, scale) {
   let g;
-  if (part.kind === 'capsule') {
-    const [cs, rs] = CAP_SEGS[part.seg];
-    g = new THREE.CapsuleGeometry(part.r, part.l, cs, rs);
-    // Odd radial counts are asymmetric across the sagittal plane; align a
-    // lathe vertex to it so vertical parts stay left/right symmetric.
-    if (rs % 2 === 1 && part.axis === 'y') g.rotateY(Math.PI / 2);
-    if (part.axis === 'x') g.rotateZ(Math.PI / 2);
-    else if (part.axis === 'z') g.rotateX(Math.PI / 2);
+  if (part.kind === 'shell') {
+    g = shellGeometry(part);
+    if (scale !== 1) g.scale(scale, scale, scale);
+    return g;
+  } else if (part.kind === 'faceRing') {
+    g = faceRingGeometry();
+    if (scale !== 1) g.scale(scale, scale, scale);
+    return g;
+  } else if (part.kind === 'tube') {
+    const curve = new THREE.CatmullRomCurve3(part.pts.map(q => new THREE.Vector3(...q)), false, 'catmullrom', 0.4);
+    g = new THREE.TubeGeometry(curve, Math.max(8, part.pts.length * 2), part.r, 3, false);
+    if (scale !== 1) g.scale(scale, scale, scale);
+    return g;
+  } else if (part.kind === 'torus') {
+    const [ts, rs2] = part.seg || [12, 3];
+    g = new THREE.TorusGeometry(part.R, part.tr, rs2, ts);
+    g.rotateX(Math.PI / 2); // ring lies horizontal, around Y
+  } else if (part.kind === 'edgeTube') {
+    const pts = [];
+    const n = part.seg || 22;
+    for (let i = 0; i < n; i++) {
+      const phi = i / n * Math.PI * 2;
+      pts.push(new THREE.Vector3(
+        Math.sin(phi) * part.r * part.rIn * part.sclX,
+        part.baseY + part.edge(phi) + part.dy,
+        Math.cos(phi) * part.r * part.rIn * part.sclZ,
+      ));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
+    g = new THREE.TubeGeometry(curve, n + 6, part.tr, 3, true);
+    if (scale !== 1) g.scale(scale, scale, scale);
+    return g;
+  } else if (part.kind === 'sph') {
+    g = new THREE.SphereGeometry(part.r, part.ws ?? 10, part.hs ?? 8, 0, Math.PI * 2, 0, part.thetaLength ?? Math.PI);
+    g = BufferGeometryUtils.mergeVertices(g);
+    if (part.scl) g.scale(part.scl[0], part.scl[1], part.scl[2]);
+    if (part.rotZ) g.rotateZ(part.rotZ);
+    if (part.rotX) g.rotateX(part.rotX);
+  } else if (part.kind === 'hinge') {
+    g = new THREE.CylinderGeometry(part.r, part.r, part.h, 6);
+    g.rotateX(Math.PI / 2); // hinge axis across the finger (Z in T-pose)
   } else if (part.kind === 'cyl') {
-    g = new THREE.CylinderGeometry(part.r, part.r, part.h, 14);
+    g = new THREE.CylinderGeometry(part.r, part.r, part.h, part.seg ?? 12);
     if (part.axis === 'x') g.rotateZ(Math.PI / 2);
     else if (part.axis === 'z') g.rotateX(Math.PI / 2);
   } else if (part.kind === 'link') {
     const from = new THREE.Vector3(...part.from), to = new THREE.Vector3(...part.to);
     const dir = to.clone().sub(from);
     const len = dir.length();
-    const [cs, rs] = CAP_SEGS[part.seg];
-    g = new THREE.CapsuleGeometry(part.r, Math.max(0.15, len - part.r), cs, rs);
-    // scl is link-local (y = along the link) and must precede placement,
-    // matching the local-then-place order of every other part kind.
-    if (part.scl) g.scale(part.scl[0], part.scl[1], part.scl[2]);
+    const [cs, rsg] = CAP_SEGS[part.seg];
+    g = new THREE.CapsuleGeometry(part.r, Math.max(0.15, len - part.r), cs, rsg);
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
     const mid = from.clone().add(to).multiplyScalar(0.5);
     g.applyMatrix4(new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)));
+    if (scale !== 1) g.scale(scale, scale, scale);
+    return g;
+  } else if (part.kind === 'ext') {
+    const shape = new THREE.Shape();
+    shape.moveTo(part.pts[0][0], part.pts[0][1]);
+    for (let i = 1; i < part.pts.length; i++) shape.lineTo(part.pts[i][0], part.pts[i][1]);
+    shape.closePath();
+    g = new THREE.ExtrudeGeometry(shape, {
+      depth: part.w - 1.4, bevelEnabled: true, bevelThickness: 0.7, bevelSize: 0.7,
+      bevelSegments: 2, steps: 1, curveSegments: 4,
+    });
+    g = BufferGeometryUtils.mergeVertices(g);
+    // shape plane (x=Z, y=Y) extruded along +z → rotate so extrusion runs along
+    // world X (spanning [-depth-bevel, +bevel]), then center that span on part.x
+    g.rotateY(-Math.PI / 2);
+    g.translate(part.x + (part.w - 1.4) / 2, 0, 0);
+    if (part.taperTop) { // narrow the cuff toward its top so it reads as a wrap, not a slab
+      const pa = g.attributes.position;
+      for (let i = 0; i < pa.count; i++) {
+        const y = pa.getY(i);
+        const t = Math.min(1, Math.max(0, (y - 5.5) / 11));
+        const k = 1 - part.taperTop * t * t;
+        pa.setX(i, part.x + (pa.getX(i) - part.x) * k);
+        // pull the cuff wall toward the ankle line so the top hugs the ball
+        if (y > 8) pa.setZ(i, pa.getZ(i) * (1 - 0.22 * t * t));
+      }
+      g.computeVertexNormals();
+    }
     if (scale !== 1) g.scale(scale, scale, scale);
     return g;
   } else {
     // RoundedBoxGeometry is non-indexed; weld it so every part is indexed
     // and mergeGeometries can combine them into one control-point pool.
     g = BufferGeometryUtils.mergeVertices(new RoundedBoxGeometry(part.w, part.h, part.d, part.seg, part.rad));
+    if (part.rotY) g.rotateY(part.rotY);
   }
-  if (part.scl) g.scale(part.scl[0], part.scl[1], part.scl[2]);
-  g.translate(part.at[0], part.at[1], part.at[2]);
+  if (part.scl && part.kind !== 'sph') g.scale(part.scl[0], part.scl[1], part.scl[2]);
+  if (part.at) g.translate(part.at[0], part.at[1], part.at[2]);
   if (scale !== 1) g.scale(scale, scale, scale);
   return g;
 }
 
-// Capsules are lathe-based: each pole ring emits zero-area triangles.
-// Strip them (and their orphaned vertices) so exports carry no degenerate
-// polygons; the per-triangle material array is filtered in the same pass.
+// Capsules/lathes emit zero-area triangles at poles. Strip them (and
+// orphaned vertices) so exports carry no degenerate polygons; the
+// per-triangle material array is filtered in the same pass.
 function stripDegenerateTriangles(g, triMat) {
   const pos = g.attributes.position;
   const idx = g.index.array;
@@ -409,16 +729,28 @@ function compactVertices(g) {
   return g;
 }
 
-function buildBody(scale) {
+function buildBody(scale, stage = 5) {
   const parts = [];
   const partMats = [];
   for (const part of PARTS) {
+    if ((part.stage ?? 1) > stage) continue;
     const g = partGeometry(part, scale);
-    const boneIndex = JINDEX.get(part.bone);
     const n = g.attributes.position.count;
     const si = new Uint16Array(n * 4);
     const sw = new Float32Array(n * 4);
-    for (let i = 0; i < n; i++) { si[i * 4] = boneIndex; sw[i * 4] = 1; }
+    if (part.boneByY) {
+      // shell rows split across spine bones by world height (still rigid per vertex)
+      const pos = g.attributes.position;
+      for (let i = 0; i < n; i++) {
+        const y = pos.getY(i) / scale;
+        let bone = part.bone;
+        for (const [cut, name] of part.boneByY) { if (y < cut) { bone = name; break; } }
+        si[i * 4] = JINDEX.get(bone); sw[i * 4] = 1;
+      }
+    } else {
+      const boneIndex = JINDEX.get(part.bone);
+      for (let i = 0; i < n; i++) { si[i * 4] = boneIndex; sw[i * 4] = 1; }
+    }
     g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
     g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
     parts.push(g);
@@ -442,37 +774,143 @@ function buildBody(scale) {
   return { geometry: merged, triMat };
 }
 
-function makeMaterials() {
-  return MATERIALS.map(m => new THREE.MeshStandardMaterial({
-    color: new THREE.Color(...m.color),
-    metalness: m.metalness,
-    roughness: m.roughness,
-  }));
+function makeMaterials(stage = 5) {
+  if (stage < 4) {
+    // clay pass: single neutral satin for silhouette review
+    return MATERIALS.map(() => new THREE.MeshStandardMaterial({
+      color: 0xcfc8bd, roughness: 0.6, metalness: 0, side: THREE.DoubleSide,
+    }));
+  }
+  return [
+    new THREE.MeshPhysicalMaterial({
+      color: 0xe3d2ba, roughness: 0.5, metalness: 0,
+      clearcoat: 0.25, clearcoatRoughness: 0.55,
+      sheen: 0.35, sheenRoughness: 0.6, sheenColor: 0xfff2e0,
+      side: THREE.DoubleSide,
+    }),
+    new THREE.MeshPhysicalMaterial({ color: 0x9a7a4a, roughness: 0.3, metalness: 1.0, envMapIntensity: 1.25 }),
+    new THREE.MeshStandardMaterial({ color: 0x4a3826, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }),
+  ];
 }
 
-function buildCharacter(scale = 1, prefix = '') {
+function buildSkeleton(scale, prefix) {
+  const bones = [];
+  const byName = new Map();
+  for (const j of JOINTS) {
+    const b = new THREE.Bone();
+    b.name = prefix + j.name;
+    const pp = j.parent ? JOINTS[JINDEX.get(j.parent)].pos : [0, 0, 0];
+    b.position.set((j.pos[0] - pp[0]) * scale, (j.pos[1] - pp[1]) * scale, (j.pos[2] - pp[2]) * scale);
+    // hands twist about the arm axis first, then deviate in the camera plane
+    if (j.name.endsWith('Hand')) b.rotation.order = 'ZYX';
+    if (j.parent) byName.get(j.parent).add(b);
+    bones.push(b);
+    byName.set(j.name, b);
+  }
+  return { bones, root: bones[0] };
+}
+
+function buildCharacter(scale = 1, prefix = '', stage = 5) {
   const { bones, root } = buildSkeleton(scale, prefix);
-  const { geometry, triMat } = buildBody(scale);
-  const mesh = new THREE.SkinnedMesh(geometry, makeMaterials());
+  const { geometry, triMat } = buildBody(scale, stage);
+  const mesh = new THREE.SkinnedMesh(geometry, makeMaterials(stage));
   mesh.name = MESH_NAME;
   mesh.castShadow = true;
   const group = new THREE.Group();
-  group.name = 'RoboMeshModel';
+  group.name = 'IvoryMannequinModel';
   group.add(root);
   group.add(mesh);
   group.updateMatrixWorld(true);
   mesh.bind(new THREE.Skeleton(bones), new THREE.Matrix4());
   mesh.frustumCulled = false;
+  // action-ready runtime map: parts, sockets, joints (spec: sculptRuntime)
+  group.userData.sculptRuntime = {
+    joints: JOINTS.map(j => j.name),
+    materials: MATERIALS.map(m => m.key),
+    sockets: [
+      { id: 'palmSocketL', bone: 'LeftHand', use: 'prop grip' },
+      { id: 'palmSocketR', bone: 'RightHand', use: 'prop grip' },
+      { id: 'soleSocketL', bone: 'LeftFoot', use: 'ground contact' },
+      { id: 'soleSocketR', bone: 'RightFoot', use: 'ground contact' },
+    ],
+  };
   return { group, mesh, bones, root, triMat };
 }
 
 /* ============================================================
+ * 4b. PART IDENTITY — explode view, part picking, and the
+ *     coverage manifest all derive from the same PARTS table,
+ *     so "a part" has exactly one definition. Meshes are named
+ *     componentId or componentId/featureId (sides suffixed);
+ *     surface relief rides its shell via explodeWithParent.
+ * ============================================================ */
+function partIdentity(part) {
+  const side = part.bone.startsWith('Left') ? 'L' : part.bone.startsWith('Right') ? 'R' : '';
+  const sid = part.sid || part.bone.toLowerCase();
+  const [base, feat] = sid.split('/');
+  const component = base + side;
+  return { component, name: feat ? `${component}/${feat}${side}` : component, relief: !!part.relief };
+}
+
+function buildPartsGroup(stage = 5) {
+  const group = new THREE.Group();
+  group.name = 'IvoryMannequinParts';
+  const mats = makeMaterials(stage);
+  for (const part of PARTS) {
+    if ((part.stage ?? 1) > stage) continue;
+    const id = partIdentity(part);
+    const mesh = new THREE.Mesh(partGeometry(part, 1), mats[part.mat]);
+    mesh.name = id.name;
+    mesh.userData.component = id.component;
+    mesh.userData.explodeWithParent = id.relief;
+    mesh.castShadow = true;
+    group.add(mesh);
+  }
+  return group;
+}
+
+// separate parts by scaling the component layout about the model centre
+function explodeParts(group, factor) {
+  const centre = new THREE.Vector3(0, 88, 0);
+  const centroids = new Map(); // componentId -> centroid of its non-relief meshes
+  const box = new THREE.Box3();
+  for (const mesh of group.children) {
+    if (mesh.userData.explodeWithParent) continue;
+    box.setFromObject(mesh);
+    const c = box.getCenter(new THREE.Vector3());
+    const cur = centroids.get(mesh.userData.component);
+    if (cur) cur.add(c).multiplyScalar(0.5);
+    else centroids.set(mesh.userData.component, c);
+  }
+  for (const mesh of group.children) {
+    const c = centroids.get(mesh.userData.component);
+    if (!c) continue;
+    mesh.position.copy(c.clone().sub(centre).multiplyScalar(factor - 1));
+  }
+}
+
+function partsManifest(stage = 5) {
+  const seen = new Map();
+  for (const part of PARTS) {
+    if ((part.stage ?? 1) > stage) continue;
+    const id = partIdentity(part);
+    const g = partGeometry(part, 1);
+    const rec = seen.get(id.name) || { mesh: id.name, component: id.component,
+      relief: id.relief, bones: new Set(), tris: 0 };
+    rec.bones.add(part.bone);
+    rec.tris += g.index.count / 3;
+    seen.set(id.name, rec);
+  }
+  return [...seen.values()].map(r => ({ ...r, bones: [...r.bones] }));
+}
+
+/* ============================================================
  * 5. FBX EXPORT DATA — pulled once from a fresh cm-scale build,
- *    independent of viewer state (the stance pose never leaks:
- *    exports rebuild the character in bind pose).
+ *    independent of viewer state (the display pose never leaks:
+ *    exports rebuild the character in bind pose, full stage).
  * ============================================================ */
 function extractFbxData(prefix) {
-  const { geometry: g, triMat } = buildBody(1);
+  const { geometry: g, triMat } = buildBody(1, 5);
   const pos = g.attributes.position, nrm = g.attributes.normal, uv = g.attributes.uv;
   const sIdx = g.attributes.skinIndex;
   const index = g.index.array;
@@ -540,7 +978,7 @@ function lintFbxData(d) {
   for (const arr of [d.verts, d.normals]) {
     for (let i = 0; i < arr.length; i++) if (!Number.isFinite(arr[i])) { errs.push('non-finite value in geometry'); break; }
   }
-  if (d.nT >= 8000) errs.push(`triangle budget exceeded: ${d.nT}`);
+  if (d.nT >= 9000) errs.push(`triangle budget exceeded: ${d.nT}`);
   return errs;
 }
 
@@ -562,7 +1000,7 @@ const P = (n, t1, t2, fl, ...vals) => N('P', [S(n), S(t1), S(t2), S(fl), ...vals
 const P70 = (...ps) => N('Properties70', [], ps);
 const IDENTITY16 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const translation16 = (x, y, z) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
-const CREATOR = 'Robo-Mesh-Model procedural humanoid platform generator';
+const CREATOR = 'Robo-Mesh-Model ivory mannequin android generator';
 
 function modelNode(id, name, cls, t) {
   return N('Model', [L(id), S('Model::' + name), S(cls)], [
@@ -1043,8 +1481,8 @@ async function runValidation() {
 }
 
 /* ============================================================
- * 11. VIEWER — white studio, soft shadows, athletic stance
- *     (pose-only; bind pose untouched).
+ * 11. VIEWER — soft blue-gray studio matching the reference
+ *     plate; reference A-pose is viewer-only (bind untouched).
  * ============================================================ */
 const ui = {
   stance: document.getElementById('cb-stance'),
@@ -1055,80 +1493,150 @@ const ui = {
 };
 
 const wrap = document.getElementById('viewport');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(REVIEW ? 1 : Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = STAGE >= 5 ? 0.95 : 1.0;
 wrap.appendChild(renderer.domElement);
 const labelRenderer = new CSS2DRenderer();
 labelRenderer.domElement.id = 'labels';
 wrap.appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf2f3f5);
+// backdrop: vertical blue-gray gradient like the reference plate
+function gradientTexture(stops) {
+  const cv = document.createElement('canvas');
+  cv.width = 2; cv.height = 512;
+  const ctx = cv.getContext('2d');
+  const gr = ctx.createLinearGradient(0, 0, 0, 512);
+  for (const [t, c] of stops) gr.addColorStop(t, c);
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, 0, 2, 512);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+const FINAL_LIGHTING = STAGE >= 5;
+scene.background = FINAL_LIGHTING
+  ? gradientTexture([[0, '#5e7b86'], [0.5, '#75919a'], [0.78, '#89a0a1'], [1, '#a7b1a8']])
+  : new THREE.Color(0xf2f3f5);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.55;
+scene.environmentIntensity = FINAL_LIGHTING ? 0.34 : 0.55;
+if (FINAL_LIGHTING) {
+  // gradient wall behind the figure: the cove junction reads at shin height
+  const wall = new THREE.Mesh(
+    new THREE.PlaneGeometry(6000, 1400),
+    new THREE.MeshBasicMaterial({ map: gradientTexture(
+      [[0, '#4e6b76'], [0.68, '#587680'], [0.78, '#6d8992'], [0.9, '#87999b'], [1, '#c2c8c0']]) }),
+  );
+  wall.position.set(0, 700, -320);
+  scene.add(wall);
+}
 
-const camera = new THREE.PerspectiveCamera(36, 1, 1, 5000);
-camera.position.set(150, 105, 235);
+const camera = new THREE.PerspectiveCamera(REVIEW ? 24 : 32, 1, 1, 5000);
+camera.position.set(170, 122, 300);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 74, 0);
+controls.target.set(0, 88, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 
-const key = new THREE.DirectionalLight(0xffffff, 1.9);
-key.position.set(140, 240, 160);
+const key = new THREE.DirectionalLight(FINAL_LIGHTING ? 0xffeccd : 0xffffff, FINAL_LIGHTING ? 2.2 : 1.9);
+key.position.set(FINAL_LIGHTING ? 170 : 140, FINAL_LIGHTING ? 560 : 380, FINAL_LIGHTING ? 330 : 260);
 key.castShadow = true;
 key.shadow.mapSize.set(2048, 2048);
-key.shadow.camera.left = -140; key.shadow.camera.right = 140;
-key.shadow.camera.top = 200; key.shadow.camera.bottom = -60;
-key.shadow.camera.far = 700;
+key.shadow.camera.left = -160; key.shadow.camera.right = 160;
+key.shadow.camera.top = 220; key.shadow.camera.bottom = -60;
+key.shadow.camera.far = 900;
 key.shadow.bias = -0.0002;
-key.shadow.radius = 5;
+key.shadow.radius = FINAL_LIGHTING ? 9 : 6;
 scene.add(key);
-const fill = new THREE.DirectionalLight(0xdfe8f5, 0.55); fill.position.set(-220, 120, 40); scene.add(fill);
-const rim = new THREE.DirectionalLight(0xffffff, 0.7); rim.position.set(-40, 180, -260); scene.add(rim);
-scene.add(new THREE.HemisphereLight(0xffffff, 0xd8dade, 0.35));
+const fill = new THREE.DirectionalLight(0xc9dade, FINAL_LIGHTING ? 0.38 : 0.55);
+fill.position.set(-260, 180, 140);
+scene.add(fill);
+const rim = new THREE.DirectionalLight(0xdfeaee, FINAL_LIGHTING ? 0.45 : 0.7);
+rim.position.set(-120, 300, -240);
+scene.add(rim);
+scene.add(new THREE.HemisphereLight(0x9db0b5, 0x9b8668, FINAL_LIGHTING ? 0.72 : 0.35));
 
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(1600, 1600),
-  new THREE.ShadowMaterial({ opacity: 0.14 }),
+  new THREE.PlaneGeometry(6000, 6000),
+  FINAL_LIGHTING
+    ? new THREE.MeshBasicMaterial({ color: 0xc2c8c0 }) // unlit: seamless cove into the wall base
+    : new THREE.MeshStandardMaterial({ color: 0xe8e9eb, roughness: 0.95, metalness: 0 }),
 );
 ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
+ground.receiveShadow = !FINAL_LIGHTING && !(REVIEW && STAGE < 5); // shadow lives on the catcher in the final plate
 scene.add(ground);
-const grid = new THREE.GridHelper(400, 40, 0xc9ccd2, 0xe0e2e6);
-grid.position.y = 0.05;
+const shadowCatcher = new THREE.Mesh(
+  new THREE.PlaneGeometry(2400, 2400),
+  new THREE.ShadowMaterial({ opacity: 0.22 }),
+);
+shadowCatcher.rotation.x = -Math.PI / 2;
+shadowCatcher.position.y = 0.05;
+shadowCatcher.receiveShadow = true;
+// clay-pass review captures need clean masks — no shadow band
+shadowCatcher.visible = !(REVIEW && STAGE < 5);
+scene.add(shadowCatcher);
+const grid = new THREE.GridHelper(400, 40, 0x8fa0a4, 0xa8b6b8);
+grid.position.y = 0.08;
+grid.visible = !REVIEW && !FINAL_LIGHTING;
 scene.add(grid);
-scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.5, 26), 22, 0x9aa7bd, 7, 3.5));
 
-const character = buildCharacter(1, '');
+const character = buildCharacter(1, '', STAGE);
 scene.add(character.group);
 const boneByName = new Map(character.bones.map(b => [b.name, b]));
 
-/* athletic stance — viewer-only pose on top of the T-pose bind */
+/* explode / part-picking mode: ?explode=1.6 swaps the skinned mesh for the
+ * named parts group (same PARTS table, T-pose) and enables click picking */
+const EXPLODE = parseFloat(PARAMS.get('explode') || '0');
+let partsGroup = null;
+if (EXPLODE > 0) {
+  character.group.visible = false;
+  partsGroup = buildPartsGroup(STAGE);
+  explodeParts(partsGroup, EXPLODE);
+  scene.add(partsGroup);
+  const hud = document.createElement('div');
+  hud.style.cssText = 'position:absolute;left:10px;top:10px;z-index:8;font:12px ui-monospace;' +
+    'background:rgba(255,255,255,.9);border:1px solid #ccc;border-radius:4px;padding:4px 8px;';
+  hud.textContent = `explode ×${EXPLODE} — click a part`;
+  wrap.appendChild(hud);
+  const ray = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  renderer.domElement.addEventListener('pointerdown', e => {
+    const r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects(partsGroup.children, false)[0];
+    hud.textContent = hit ? `${hit.object.name}  (component ${hit.object.userData.component})` : 'no part hit';
+  });
+}
+
+/* reference A-pose — viewer-only pose on top of the T-pose bind.
+ * Angles measured from the plate: arm chain 36.7°/46.4° from
+ * vertical, hands twisted dorsal-to-camera, fingers fanned +
+ * relax-curled, legs converging hip x8.3 → ankle x4.1. */
 const STANCE_POSE = (() => {
   const p = {};
   const set = (n, x, y, z) => { p[n] = [x, y, z]; };
-  set('Spine', -0.05, 0, 0);
-  set('Spine1', -0.03, 0, 0);
-  set('Neck', 0.07, 0, 0);
-  set('Head', 0.02, 0, 0);
   for (const [S, s] of [['Left', 1], ['Right', -1]]) {
-    set(S + 'Arm', 0, 0, s * -0.92);
-    set(S + 'ForeArm', 0, s * -0.52, s * -0.10);
-    set(S + 'Hand', 0, s * -0.08, 0);
-    for (const f of ['Index', 'Middle', 'Ring', 'Pinky'])
-      for (let i = 1; i <= 3; i++) set(S + 'Hand' + f + i, 0, 0, s * -0.30);
-    set(S + 'HandThumb1', -0.12, s * -0.20, 0);
-    set(S + 'HandThumb2', 0, s * -0.22, 0);
-    set(S + 'HandThumb3', 0, s * -0.18, 0);
-    set(S + 'UpLeg', -0.17, 0, s * 0.03);
-    set(S + 'Leg', 0.34, 0, 0);
-    set(S + 'Foot', -0.17, 0, s * -0.03);
+    set(S + 'Arm', 0, 0, s * -0.885);
+    set(S + 'ForeArm', 0, 0, s * 0.066); // elbow bends outward: forearm less steep than upper arm
+    set(S + 'Hand', 1.35, s * -0.06, s * 0.60);
+    const fan = { Index: -0.31, Middle: -0.07, Ring: 0.16, Pinky: 0.39 };
+    for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) {
+      set(S + 'Hand' + f + '1', 0, s * fan[f], s * -0.10);
+      set(S + 'Hand' + f + '2', 0, 0, s * -0.12);
+      set(S + 'Hand' + f + '3', 0, 0, s * -0.10);
+    }
+    set(S + 'HandThumb1', 0.12, s * -0.12, s * -0.34);
+    set(S + 'HandThumb2', 0, s * -0.14, s * -0.16);
+    set(S + 'HandThumb3', 0, s * -0.1, 0);
+    set(S + 'UpLeg', 0, 0, s * -0.042);
+    set(S + 'Leg', 0, 0, s * -0.031);
+    set(S + 'Foot', 0, 0, s * 0.073);
   }
   return p;
 })();
@@ -1181,6 +1689,26 @@ ui.labels.addEventListener('change', syncLabels);
 // Sync once at startup — browsers may restore checkbox state across reloads.
 syncStance(); syncWire(); syncSkel(); syncLabels();
 
+/* review mode: fixed reference-matched framings for the sculpt loop */
+if (REVIEW) {
+  document.body.classList.add('review');
+  ui.skel.checked = false; ui.labels.checked = false; ui.wire.checked = false;
+  ui.stance.checked = true;
+  syncStance(); syncWire(); syncSkel(); syncLabels();
+  skelHelper.visible = dots.visible = false;
+  const views = {
+    front: { pos: [0, 122, 478], tgt: [0, 88.5, 0] },
+    tq: { pos: [310, 135, 375], tgt: [0, 88.5, 0] },
+    profile: { pos: [478, 122, 0], tgt: [0, 88.5, 0] },
+    hands: { pos: [30, 82, 132], tgt: [56, 95, 1] },
+    head: { pos: [0, 158, 130], tgt: [0, 160, 0] },
+  };
+  const v = views[REVIEW] || views.front;
+  camera.position.set(...v.pos);
+  controls.target.set(...v.tgt);
+  controls.update();
+}
+
 function exportButton(id, fn) {
   const btn = document.getElementById(id);
   btn.addEventListener('click', async () => {
@@ -1190,13 +1718,13 @@ function exportButton(id, fn) {
   });
 }
 exportButton('btn-ascii', () => {
-  download('robo-mesh-ascii.fbx', new Blob([generateFbx('ascii')], { type: 'text/plain' }));
+  download('mannequin-ascii.fbx', new Blob([generateFbx('ascii')], { type: 'text/plain' }));
 });
 exportButton('btn-bin', () => {
-  download('robo-mesh-binary.fbx', new Blob([generateFbx('binary')], { type: 'application/octet-stream' }));
+  download('mannequin-binary.fbx', new Blob([generateFbx('binary')], { type: 'application/octet-stream' }));
 });
 exportButton('btn-glb', async () => {
-  download('robo-mesh.glb', new Blob([await generateGlb()], { type: 'model/gltf-binary' }));
+  download('mannequin.glb', new Blob([await generateGlb()], { type: 'model/gltf-binary' }));
 });
 document.getElementById('btn-validate').addEventListener('click', runValidation);
 ui.prefix.addEventListener('change', runValidation);
@@ -1209,10 +1737,10 @@ ui.prefix.addEventListener('change', runValidation);
   document.getElementById('stat-tris').textContent = tris.toLocaleString();
   const bbox = g.boundingBox;
   document.getElementById('stat-height').textContent = (bbox.max.y - bbox.min.y).toFixed(0);
-  console.info(`[robo-mesh-model] ${JOINTS.length} joints, ${tris} triangles, ` +
+  console.info(`[mannequin] stage ${STAGE}: ${JOINTS.length} joints, ${tris} triangles, ` +
     `${g.attributes.position.count} vertices, height ${(bbox.max.y - bbox.min.y).toFixed(1)} cm, ` +
     `${g.groups.length} material groups`);
-  if (tris >= 8000) console.warn('[robo-mesh-model] triangle budget exceeded');
+  if (tris >= 9000) console.warn('[mannequin] triangle budget exceeded');
 }
 
 /* hierarchy tree — finger chains collapsed by default */
@@ -1241,7 +1769,12 @@ ui.prefix.addEventListener('change', runValidation);
 
 /* resize + loop */
 function resize() {
-  const w = wrap.clientWidth, h = wrap.clientHeight;
+  let w = wrap.clientWidth, h = wrap.clientHeight;
+  if (REVIEW) { // reference aspect 0.753 for comparable capture framing
+    const target = 0.7532;
+    if (w / h > target) w = Math.round(h * target);
+    else h = Math.round(w / target);
+  }
   renderer.setSize(w, h);
   labelRenderer.setSize(w, h);
   camera.aspect = w / h;
@@ -1256,12 +1789,20 @@ renderer.setAnimationLoop(() => {
 });
 
 /* exposed for debugging + headless automation */
-window.__robo = {
+window.__mannequin = {
   THREE, character, buildCharacter, extractFbxData, generateFbx, generateGlb,
-  runValidation, applyStance, JOINTS, PARTS, MATERIALS,
+  runValidation, applyStance, JOINTS, PARTS, MATERIALS, STAGE,
+  renderer, scene, camera, controls, buildPartsGroup, partsManifest, explodeParts,
+  // synchronous render + read-back (multisampled buffers resolve stale otherwise)
+  capture(name, port = 8766) {
+    renderer.render(scene, camera);
+    return fetch(`http://localhost:${port}/save?name=${name}`, {
+      method: 'POST', body: renderer.domElement.toDataURL('image/png'),
+    }).then(r => r.text());
+  },
 };
 
-runValidation();
+if (!REVIEW) runValidation();
 </script>
 </body>
 </html>

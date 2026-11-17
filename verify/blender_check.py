@@ -1,4 +1,4 @@
-"""Headless import assertions for Robo-Mesh-Model exports.
+"""Headless import assertions for Robo-Mesh-Model (Ivory Mannequin Android) exports.
 
 Usage:
     blender -b --factory-startup --python verify/blender_check.py -- \
@@ -7,7 +7,7 @@ Usage:
 Verifies, for both files: armature with the 52 Mixamo-named joints (full
 finger chains) and the expected parent map, a mesh where every vertex sits in
 exactly one vertex group at weight 1.0, triangle count, three material slots
-all in use, mesh anchored to the armature, and real-world height ~1.46 m.
+all in use, mesh anchored to the armature, and real-world height ~1.76 m.
 ASCII FBX is intentionally not tested here — Blender < 4.5 cannot read it;
 that flavor is covered by the in-page FBXLoader round-trip.
 """
@@ -19,7 +19,7 @@ from mathutils import Vector
 argv = sys.argv[sys.argv.index('--') + 1:]
 FBX_PATH, GLB_PATH = argv[0], argv[1]
 PREFIX = argv[2] if len(argv) > 2 else ''
-EXPECTED_TRIS = int(argv[3]) if len(argv) > 3 else 6396
+EXPECTED_TRIS = int(argv[3]) if len(argv) > 3 else 8980
 
 PARENTS = {
     'Hips': None, 'Spine': 'Hips', 'Spine1': 'Spine', 'Spine2': 'Spine1',
@@ -89,7 +89,7 @@ def verify(tag):
     la, ra = wx(bl[PREFIX + 'LeftArm']), wx(bl[PREFIX + 'RightArm'])
     lh, rh = wx(bl[PREFIX + 'LeftHand']), wx(bl[PREFIX + 'RightHand'])
     check(abs(la.z - lh.z) < 1e-4 and abs(ra.z - rh.z) < 1e-4, f'{tag}: arms level (T-pose)')
-    check(abs(wx(bl[PREFIX + 'Hips']).z - 0.84) < 0.02, f'{tag}: Hips at ~0.84 m')
+    check(abs(wx(bl[PREFIX + 'Hips']).z - 0.97) < 0.02, f'{tag}: Hips at ~0.97 m')
     tip = wx(bl[PREFIX + 'LeftHandMiddle3'])
     check(tip.x > wx(bl[PREFIX + 'LeftHand']).x, f'{tag}: finger chains extend along +X')
 
@@ -117,7 +117,7 @@ def verify(tag):
     ev = mesh.evaluated_get(depsgraph)
     ws = [ev.matrix_world @ Vector(c) for c in ev.bound_box]
     height = max(v.z for v in ws) - min(v.z for v in ws)
-    check(1.38 < height < 1.54, f'{tag}: height {height:.3f} m (want ~1.46)')
+    check(1.68 < height < 1.84, f'{tag}: height {height:.3f} m (want ~1.76)')
 
     # Bbox spans are translation-invariant, so also anchor the mesh to the
     # skeleton: a wrong cluster Transform displaces the mesh object itself.
